@@ -42,6 +42,8 @@
 | `tests/test-install.sh` | Tests for `install.sh` against a fake `HOME`. |
 | `README.md` | What the repository is, quick start, skills list, portability, security. |
 | `CONTRIBUTING.md` | How to add a skill and run checks locally. |
+| `AGENTS.md` | Instructions for an agent working in this repository; the canonical copy. |
+| `CLAUDE.md`, `GEMINI.md` | Symlinks to `AGENTS.md` so each agent finds the same guidance. |
 | `.github/workflows/ci.yml` | Runs the validator and tests on push and pull request. |
 
 ---
@@ -187,7 +189,22 @@ VALIDATE="$REPO_ROOT/scripts/validate-skills"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
-# make_skill ROOT NAME  -- create a minimal valid skill, echo its directory
+# new_root -- a repository root carrying the boilerplate the validator expects.
+# Later tasks add checks for README.md and the agent guidance symlinks, so the
+# fixtures provide them from the start and the negative cases remove them.
+new_root() {
+    local root
+    root=$(mktemp -d "$WORK/root.XXXXXX")
+    mkdir -p "$root/skills"
+    printf 'Guidance for agents working in this fixture.\n' > "$root/AGENTS.md"
+    ( cd "$root" && ln -s AGENTS.md CLAUDE.md && ln -s AGENTS.md GEMINI.md )
+    printf '# fixture\n\n## Available skills\n\n| Skill | Description |\n|---|---|\n' \
+        > "$root/README.md"
+    printf '%s\n' "$root"
+}
+
+# make_skill ROOT NAME -- minimal valid skill, listed in the README; echoes its
+# directory.
 make_skill() {
     local root=$1 name=$2 dir="$1/skills/$2"
     mkdir -p "$dir"
@@ -201,14 +218,8 @@ description: A fixture skill used to exercise the validator.
 
 Body text.
 EOF
+    printf '| `%s` | fixture |\n' "$name" >> "$root/README.md"
     printf '%s\n' "$dir"
-}
-
-new_root() {
-    local root
-    root=$(mktemp -d "$WORK/root.XXXXXX")
-    mkdir -p "$root/skills"
-    printf '%s\n' "$root"
 }
 
 echo "== validate-skills"
@@ -609,7 +620,7 @@ validation never requires installing anything."
 **Files:**
 - Create: `skills/lsst-eups/scripts/lsst-run`, `skills/lsst-eups/SKILL.md`, `tests/test-lsst-run.sh`
 
-A minimal `SKILL.md` lands here so the validator stays green; Task 5 writes its final content.
+`SKILL.md` lands here covering the wrapper as it stands, so the validator stays green; Task 5 adds the remaining sections.
 
 **Interfaces:**
 - Consumes: `scripts/validate-skills` from Task 2.
@@ -1544,7 +1555,7 @@ Expected: `23 checks, 0 failed`. shellcheck silent.
 ```
 
 Expected: the dry run lists the actions; the real run refuses to replace the existing real directories at `~/.claude/skills/lsst-eups` and `~/.codex/skills/lsst-eups` and exits 1, telling you to pass `--force`.
-Do not pass `--force` yet; Task 8 covers the cutover.
+Do not pass `--force` yet; Task 9 covers the cutover.
 
 - [ ] **Step 6: Commit**
 
@@ -1578,14 +1589,13 @@ Append to `tests/test-validate-skills.sh`, immediately before the final `finish`
 ```bash
 # The README skills table must list exactly the skills that exist.
 ROOT=$(new_root); make_skill "$ROOT" listed >/dev/null
-printf '# r\n\n## Available skills\n\n| Skill | Description |\n|---|---|\n' \
-    > "$ROOT/README.md"
+check "listed skill passes" assert_status 0 "$VALIDATE" --root "$ROOT"
+
+perl -ni -e 'print unless /`listed`/' "$ROOT/README.md"
 OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
 check "unlisted skill is reported" assert_contains "$OUT" "not listed in README"
 
-printf '| `listed` | fixture |\n' >> "$ROOT/README.md"
-check "listed skill passes" assert_status 0 "$VALIDATE" --root "$ROOT"
-
+ROOT=$(new_root); make_skill "$ROOT" listed >/dev/null
 printf '| `ghost` | nonexistent |\n' >> "$ROOT/README.md"
 OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
 check "README naming a missing skill is reported" assert_contains "$OUT" "ghost"
@@ -1816,7 +1826,256 @@ skills present under skills/, so the list cannot go stale."
 
 ---
 
-### Task 8: CI and cutover
+### Task 8: Agent guidance file and its aliases
+
+**Files:**
+- Create: `AGENTS.md`, `CLAUDE.md` (symlink), `GEMINI.md` (symlink)
+- Modify: `scripts/validate-skills`, `tests/test-validate-skills.sh`
+
+`AGENTS.md` is the canonical copy because Codex and Antigravity both read it.
+Claude Code reads `CLAUDE.md`, Gemini CLI reads `GEMINI.md`, and Antigravity reads `GEMINI.md` in addition to `AGENTS.md`, letting it take precedence on conflict.
+Pointing both aliases at one inode means there is nothing to conflict and one file to maintain.
+
+**Interfaces:**
+- Consumes: `scripts/validate-skills` from Tasks 2 and 7.
+- Produces: validator check that `CLAUDE.md` and `GEMINI.md` are symlinks named `AGENTS.md`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `tests/test-validate-skills.sh`, immediately before the final `finish` line:
+
+```bash
+# The agent guidance aliases must be symlinks to the canonical AGENTS.md.
+ROOT=$(new_root); make_skill "$ROOT" guided >/dev/null
+check "symlinked aliases pass" assert_status 0 "$VALIDATE" --root "$ROOT"
+
+rm "$ROOT/GEMINI.md"
+OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
+check "missing alias is reported" assert_contains "$OUT" "GEMINI.md"
+
+printf 'a divergent copy\n' > "$ROOT/GEMINI.md"
+OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
+check "copied alias is reported" assert_contains "$OUT" "not a copy"
+
+rm -f "$ROOT/AGENTS.md"
+OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
+check "missing AGENTS.md is reported" assert_contains "$OUT" "AGENTS.md"
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `bash tests/test-validate-skills.sh`
+Expected: the four new checks fail; the validator does not look at the guidance files yet.
+
+- [ ] **Step 3: Add the check to `scripts/validate-skills`**
+
+Add this constant beside the other module-level constants:
+
+```python
+# Claude Code reads CLAUDE.md, Gemini CLI reads GEMINI.md, and Antigravity
+# reads GEMINI.md on top of AGENTS.md. Symlinking the aliases to one canonical
+# file keeps a single copy and removes any possibility of conflict.
+AGENT_GUIDE_ALIASES = ("CLAUDE.md", "GEMINI.md")
+```
+
+Add this function above `main`:
+
+```python
+def check_agent_guides(root: Path, report) -> None:
+    """The per-agent guidance files must be symlinks to AGENTS.md."""
+    canonical = root / "AGENTS.md"
+    if not canonical.is_file():
+        report(canonical, "no AGENTS.md")
+        return
+    for alias in AGENT_GUIDE_ALIASES:
+        path = root / alias
+        if not path.is_symlink():
+            if path.exists():
+                report(path, "must be a symlink to AGENTS.md, not a copy")
+            else:
+                report(path, "missing; must be a symlink to AGENTS.md")
+            continue
+        target = os.readlink(path)
+        if target != "AGENTS.md":
+            report(path, f"symlink points at {target}, expected AGENTS.md")
+```
+
+Then call it from `main`, immediately after the `check_readme(...)` call:
+
+```python
+    check_agent_guides(root, report)
+```
+
+- [ ] **Step 4: Write `AGENTS.md`**
+
+```markdown
+# Working in this repository
+
+This repository holds reusable Agent Skills maintained by the Rubin Observatory Data Management team.
+Every skill installs unchanged into Claude Code, Codex, and Antigravity from one canonical copy.
+
+`CLAUDE.md` and `GEMINI.md` are symlinks to this file so that every agent reads the same guidance.
+Edit `AGENTS.md` and never replace an alias with a copy; the validator rejects that.
+
+## Before you finish
+
+Run both of these and confirm they pass:
+
+```bash
+./scripts/validate-skills
+./tests/run-all.sh
+```
+
+Do not push to the remote. Commit locally and leave pushing to a human.
+
+## Adding a skill
+
+Create one directory under `skills/`:
+
+```text
+skills/my-new-skill/
+├── SKILL.md       # required
+├── scripts/       # optional executable helpers
+├── references/    # optional supporting documentation
+└── assets/        # optional templates and static files
+```
+
+Create the optional subdirectories only when the skill actually needs them.
+
+`SKILL.md` starts with YAML frontmatter carrying `name` and `description`:
+
+```markdown
+---
+name: my-new-skill
+description: Use when ... — describe the situation that should trigger the skill.
+---
+
+# My New Skill
+
+Instructions go here.
+```
+
+The `name` must equal the directory name and must be lowercase words separated by hyphens.
+
+Add the skill to the table in `README.md`; the validator checks that the table matches `skills/`.
+
+## Writing the description
+
+The `description` is what an agent matches against when deciding whether to load the skill, so describe the triggering situation rather than the topic.
+Name the concrete tools, commands, error messages, and phrases that should pull the skill in.
+
+Prefer "Use when running pytest against a package that imports `lsst.*`" over "Helps with testing".
+
+## Portability is the point
+
+Write agent-neutral instructions.
+Describe what to do in terms of ordinary commands and files, not a particular agent's tool names, slash commands, or permission prompts.
+
+**Never hardcode a skill's own installed path.**
+That path differs per agent and per install mode, so refer to helpers relatively as `scripts/<name>`.
+Every supported agent tells the model where the skill directory is.
+The validator rejects any `SKILL.md` naming `~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills`, or a Gemini skills path.
+
+Do not create per-agent copies of a skill.
+Where behavior genuinely differs between agents, express the difference conditionally inside the one `SKILL.md`.
+Two divergent copies of this repository's first skill are what motivated it existing; do not recreate that problem.
+
+Keep `SKILL.md` focused.
+Put detailed supporting material in `references/` and reusable deterministic operations in `scripts/`.
+
+Agent-specific metadata that other agents ignore, such as `agents/openai.yaml` for Codex, is additive and belongs in the canonical skill directory.
+
+## Helper scripts
+
+Helper scripts are ordinary command-line programs.
+They take explicit arguments, document their dependencies, return useful exit codes, write results to stdout and diagnostics to stderr, and depend on no agent's internals.
+
+Everything under `scripts/` must be executable.
+
+Shell scripts must run under **bash 3.2**, which is what macOS ships.
+No associative arrays, no `${var,,}`, no `mapfile`.
+Expand possibly-empty arrays as `${arr[@]+"${arr[@]}"}`.
+
+Avoid GNU-only tool flags.
+No `readlink -f`, no `sort -V`, no bare `sed -i`.
+Resolve a directory with `( cd "$d" && pwd -P )`.
+
+Shell scripts must pass `shellcheck` with no warnings.
+
+Python helpers use the standard library only.
+Nothing in this repository may require a `pip install`.
+
+## Prose style
+
+Write one sentence per line in Markdown.
+Use American English spelling.
+
+Comments and documentation describe the code as it is today.
+Do not reference transient plans, task numbers, or past mistakes.
+
+## Security
+
+A skill is executable instruction and anything under `scripts/` is code that runs with the user's privileges.
+Under the default symlink installation a `git pull` changes what every installed agent executes.
+
+Treat skill review with the same care as any other code review.
+```
+
+- [ ] **Step 5: Create the symlinks and point the README at them**
+
+```bash
+ln -s AGENTS.md CLAUDE.md
+ln -s AGENTS.md GEMINI.md
+```
+
+Add this subsection to `README.md`, immediately before `## Security`:
+
+```markdown
+## Guidance for agents
+
+[AGENTS.md](AGENTS.md) carries the instructions an agent needs when adding or editing a skill here.
+
+`CLAUDE.md` and `GEMINI.md` are symlinks to it, so Claude Code, Codex, Gemini CLI, and Antigravity all read the same guidance from one file.
+Edit `AGENTS.md`; the validator rejects an alias that has been replaced by a copy.
+```
+
+- [ ] **Step 6: Verify the symlinks and the checks**
+
+```bash
+ls -l CLAUDE.md GEMINI.md
+git check-attr -a CLAUDE.md >/dev/null 2>&1
+bash tests/test-validate-skills.sh
+./tests/run-all.sh
+```
+
+Expected: `ls -l` shows both as `-> AGENTS.md`. Validator tests report `19 checks, 0 failed`, and `run-all.sh` exits 0.
+
+- [ ] **Step 7: Confirm git stores them as symlinks, not copies**
+
+```bash
+git add AGENTS.md CLAUDE.md GEMINI.md
+git ls-files -s CLAUDE.md GEMINI.md
+```
+
+Expected: mode `120000` for both, which is git's symlink mode.
+Mode `100644` would mean a copy was committed and the single-source property is already lost.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add AGENTS.md CLAUDE.md GEMINI.md scripts/validate-skills tests/test-validate-skills.sh
+git commit -m "Add agent guidance with per-agent symlink aliases
+
+AGENTS.md is canonical because Codex and Antigravity both read it, and
+CLAUDE.md and GEMINI.md symlink to it so Claude Code and Gemini find the
+same content. The validator rejects an alias that is missing or has been
+replaced by a copy, since divergent copies are the failure this
+repository exists to prevent."
+```
+
+---
+
+### Task 9: CI and cutover
 
 **Files:**
 - Create: `.github/workflows/ci.yml`

@@ -32,6 +32,9 @@ agent-skills/
 ├── README.md
 ├── LICENSE                      # BSD 3-Clause
 ├── CONTRIBUTING.md
+├── AGENTS.md                    # canonical agent guidance
+├── CLAUDE.md -> AGENTS.md
+├── GEMINI.md -> AGENTS.md
 ├── install.sh
 ├── skills/
 │   └── lsst-eups/
@@ -125,6 +128,7 @@ Checks:
 9. Files under `scripts/` are executable.
 10. Every skill under `skills/` appears in the available-skills list in `README.md`, and that list names no skill that does not exist.
 11. No `SKILL.md` names a per-agent discovery location such as `~/.claude/skills` or `~/.codex/skills`, since a skill must not hardcode its own installed path.
+12. `CLAUDE.md` and `GEMINI.md` are symlinks named `AGENTS.md`, not copies.
 
 The validator exits non-zero on any failure and prints one diagnostic per problem with the offending path.
 
@@ -252,6 +256,16 @@ Manual verification covers both environment flavors: the existing lsstsw tree ex
 `CONTRIBUTING.md` covers the skill directory layout, a minimal `SKILL.md` example, how to run the validator and tests locally, and the review expectation for changes.
 
 The available-skills list in `README.md` is checked against `skills/` by the validator so it cannot go stale.
+
+`AGENTS.md` holds the guidance an agent needs when adding or editing a skill in this repository: the directory layout, frontmatter requirements, the portability rules, the bash 3.2 and standard-library-only constraints, the prose conventions, and the instruction to run the validator and tests before finishing and to leave pushing to a human.
+
+It is the canonical copy because Codex and Antigravity both read `AGENTS.md`.
+Claude Code reads `CLAUDE.md` and Gemini CLI reads `GEMINI.md`; Antigravity reads `GEMINI.md` in addition to `AGENTS.md` and lets it win on conflict.
+Both aliases are symlinks to `AGENTS.md`, so there is one file to maintain and identical content cannot conflict.
+The validator enforces that they remain symlinks, because a copy would reintroduce exactly the divergence this repository exists to prevent.
+
+Git stores these as symlinks (mode `120000`).
+A Windows checkout without developer mode or `core.symlinks=true` will materialize them as small text files containing the target name, which costs those users the per-agent aliases but leaves `AGENTS.md` itself correct.
 
 ## Decisions deferred
 
