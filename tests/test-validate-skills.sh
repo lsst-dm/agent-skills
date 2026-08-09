@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016  # fixtures embed literal backticks in markdown
 # Fixture-driven tests for scripts/validate-skills.
 set -uo pipefail
 

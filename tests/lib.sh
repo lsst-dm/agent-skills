@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Assertion helpers for the agent-skills test scripts.
 # Source this from a test script, then call check/finish.
 
