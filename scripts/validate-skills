@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""Validate every skill in this repository.
+
+Checks layout, frontmatter, naming, references, and portability rules.
+Prints one diagnostic per problem and exits 1 if any were found.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import py_compile
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+# Markdown links to relative targets, and backticked paths under a known
+# skill subdirectory. Both forms are unambiguous, so neither produces false
+# positives on ordinary prose.
+LINK_RE = re.compile(r"\[[^\]]*\]\((?!https?://|mailto:|#)([^)]+)\)")
+CODE_PATH_RE = re.compile(r"`((?:scripts|references|assets)/[^`\s]+)`")
+
+# Agent discovery locations. A skill that names one of these has baked in an
+# install path that differs per agent and per install mode.
+HARDCODED_PATH_RE = re.compile(
+    r"(?:~|\$HOME)/\.(?:claude|codex|agents|gemini)/[A-Za-z0-9_./-]*skills"
+)
+
+SHELL_SHEBANG_RE = re.compile(r"^#!.*\b(?:ba|da|k|z)?sh\b")
+
+
+def load_frontmatter(text: str) -> tuple[dict, list[str]]:
+    """Return (fields, errors) from the leading YAML frontmatter block."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}, ["missing YAML frontmatter block at the start of the file"]
+    end = None
+    for index in range(1, len(lines)):
+        if lines[index].strip() == "---":
+            end = index
+            break
+    if end is None:
+        return {}, ["unterminated YAML frontmatter block"]
+    block = "\n".join(lines[1:end])
+    try:
+        import yaml
+    except ImportError:
+        return parse_flat_mapping(block)
+    try:
+        data = yaml.safe_load(block)
+    except Exception as exc:  # noqa: BLE001 - report any parse failure
+        return {}, [f"frontmatter does not parse as YAML: {exc}"]
+    if data is None:
+        return {}, ["frontmatter block is empty"]
+    if not isinstance(data, dict):
+        return {}, ["frontmatter is not a key/value mapping"]
+    return data, []
+
+
+def parse_flat_mapping(block: str) -> tuple[dict, list[str]]:
+    """Parse the flat `key: value` subset that skill frontmatter uses.
+
+    Used only when PyYAML is unavailable, so that validation never requires
+    installing anything.
+    """
+    fields: dict[str, str] = {}
+    errors: list[str] = []
+    for offset, line in enumerate(block.splitlines()):
+        lineno = offset + 2  # account for the opening --- line
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line[:1].isspace():
+            errors.append(
+                f"line {lineno}: nested frontmatter needs PyYAML to validate"
+            )
+            continue
+        key, sep, value = line.partition(":")
+        if not sep:
+            errors.append(f"line {lineno}: not a `key: value` pair")
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        fields[key.strip()] = value
+    return fields, errors
+
+
+def referenced_paths(text: str) -> list[str]:
+    """Relative paths a SKILL.md points at, deduplicated in first-seen order."""
+    found: list[str] = []
+    for match in LINK_RE.finditer(text):
+        found.append(match.group(1).split("#", 1)[0].strip())
+    for match in CODE_PATH_RE.finditer(text):
+        found.append(match.group(1))
+    seen: set[str] = set()
+    ordered = []
+    for path in found:
+        if path and not path.startswith("/") and path not in seen:
+            seen.add(path)
+            ordered.append(path)
+    return ordered
+
+
+def is_shell_script(path: Path) -> bool:
+    if path.suffix in {".sh", ".bash"}:
+        return True
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            return bool(SHELL_SHEBANG_RE.match(handle.readline()))
+    except OSError:
+        return False
+
+
+def check_shell(path: Path, report) -> None:
+    result = subprocess.run(
+        ["bash", "-n", str(path)], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        report(path, f"shell syntax error: {result.stderr.strip()}")
+        return
+    if shutil_which("shellcheck"):
+        result = subprocess.run(
+            ["shellcheck", "--format=gcc", str(path)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            for line in result.stdout.strip().splitlines():
+                report(path, f"shellcheck: {line}")
+
+
+def check_python(path: Path, report) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            py_compile.compile(
+                str(path), cfile=os.path.join(tmp, "out.pyc"), doraise=True
+            )
+        except py_compile.PyCompileError as exc:
+            report(path, f"python syntax error: {exc}")
+
+
+def shutil_which(name: str):
+    from shutil import which
+
+    return which(name)
+
+
+def validate_skill(skill_dir: Path, report) -> None:
+    entrypoint = skill_dir / "SKILL.md"
+    if not entrypoint.is_file():
+        report(skill_dir, "no SKILL.md in skill directory")
+        return
+
+    text = entrypoint.read_text(encoding="utf-8")
+    fields, errors = load_frontmatter(text)
+    for message in errors:
+        report(entrypoint, message)
+    if errors and not fields:
+        return
+
+    name = fields.get("name", "")
+    if not name:
+        report(entrypoint, "frontmatter is missing a `name` field")
+    else:
+        if name != skill_dir.name:
+            report(
+                entrypoint,
+                f"frontmatter name `{name}` does not match directory "
+                f"`{skill_dir.name}`",
+            )
+        if not NAME_RE.match(name):
+            report(
+                entrypoint,
+                f"name `{name}` must be lowercase words separated by hyphens",
+            )
+
+    if not fields.get("description", ""):
+        report(entrypoint, "frontmatter is missing a `description` field")
+
+    for reference in referenced_paths(text):
+        if not (skill_dir / reference).exists():
+            report(entrypoint, f"referenced path does not exist: {reference}")
+
+    for match in HARDCODED_PATH_RE.finditer(text):
+        report(
+            entrypoint,
+            f"hardcoded install path `{match.group(0)}`; refer to skill files "
+            "relatively instead",
+        )
+
+    scripts_dir = skill_dir / "scripts"
+    if scripts_dir.is_dir():
+        for path in sorted(scripts_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            if not os.access(path, os.X_OK):
+                report(path, "file under scripts/ is not executable")
+            if is_shell_script(path):
+                check_shell(path, report)
+            elif path.suffix == ".py":
+                check_python(path, report)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--root",
+        default=str(Path(__file__).resolve().parent.parent),
+        help="repository root to validate (default: this repository)",
+    )
+    args = parser.parse_args()
+
+    root = Path(args.root).resolve()
+    skills_root = root / "skills"
+    problems: list[str] = []
+
+    def report(path: Path, message: str) -> None:
+        try:
+            shown = path.relative_to(root)
+        except ValueError:
+            shown = path
+        problems.append(f"{shown}: {message}")
+
+    if not skills_root.is_dir():
+        print(f"{skills_root}: no skills directory", file=sys.stderr)
+        return 1
+
+    skill_dirs = sorted(p for p in skills_root.iterdir() if p.is_dir())
+    for skill_dir in skill_dirs:
+        validate_skill(skill_dir, report)
+
+    for problem in problems:
+        print(problem, file=sys.stderr)
+
+    if problems:
+        print(
+            f"\n{len(problems)} problem(s) in {len(skill_dirs)} skill(s)",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"{len(skill_dirs)} skill(s) validated")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
