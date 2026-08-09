@@ -124,6 +124,7 @@ Checks:
 8. Python files pass `py_compile`.
 9. Files under `scripts/` are executable.
 10. Every skill under `skills/` appears in the available-skills list in `README.md`, and that list names no skill that does not exist.
+11. No `SKILL.md` names a per-agent discovery location such as `~/.claude/skills` or `~/.codex/skills`, since a skill must not hardcode its own installed path.
 
 The validator exits non-zero on any failure and prints one diagnostic per problem with the offending path.
 
