@@ -1,0 +1,13 @@
+# Machine-local agent settings
+.claude/settings.local.json
+
+# Editor and OS noise
+.DS_Store
+*.swp
+
+# Python bytecode from validator runs
+__pycache__/
+*.pyc
+
+# Scratch workspace used while executing an implementation plan
+.superpowers/
