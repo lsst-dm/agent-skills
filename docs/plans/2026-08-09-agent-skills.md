@@ -73,6 +73,9 @@
 # Python bytecode from validator runs
 __pycache__/
 *.pyc
+
+# Scratch workspace used while executing an implementation plan
+.superpowers/
 ```
 
 - [ ] **Step 2: Move the original brief**
