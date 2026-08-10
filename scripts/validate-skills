@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from shutil import which
 
 try:
     import yaml
@@ -115,7 +116,10 @@ def check_agent_metadata(skill_dir: Path, name: str, report) -> None:
 
 
 def referenced_paths(text: str) -> list[str]:
-    """Relative paths a SKILL.md points at, deduplicated in first-seen order."""
+    """Return the relative paths a SKILL.md points at.
+
+    Duplicates are dropped, keeping first-seen order.
+    """
     found: list[str] = []
     for match in LINK_RE.finditer(text):
         found.append(match.group(1).split("#", 1)[0].strip())
@@ -131,6 +135,7 @@ def referenced_paths(text: str) -> list[str]:
 
 
 def is_shell_script(path: Path) -> bool:
+    """Report whether a file is a shell script, by suffix or shebang."""
     if path.suffix in {".sh", ".bash"}:
         return True
     try:
@@ -141,11 +146,12 @@ def is_shell_script(path: Path) -> bool:
 
 
 def check_shell(path: Path, report) -> None:
+    """Parse a shell script, then lint it when shellcheck is available."""
     result = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True)
     if result.returncode != 0:
         report(path, f"shell syntax error: {result.stderr.strip()}")
         return
-    if shutil_which("shellcheck"):
+    if which("shellcheck"):
         result = subprocess.run(
             ["shellcheck", "--format=gcc", str(path)],
             capture_output=True,
@@ -157,6 +163,7 @@ def check_shell(path: Path, report) -> None:
 
 
 def check_python(path: Path, report) -> None:
+    """Compile a Python file to prove it parses."""
     with tempfile.TemporaryDirectory() as tmp:
         try:
             py_compile.compile(str(path), cfile=os.path.join(tmp, "out.pyc"), doraise=True)
@@ -164,13 +171,8 @@ def check_python(path: Path, report) -> None:
             report(path, f"python syntax error: {exc}")
 
 
-def shutil_which(name: str):
-    from shutil import which
-
-    return which(name)
-
-
 def validate_skill(skill_dir: Path, report) -> None:
+    """Check one skill directory against every rule that applies to it."""
     entrypoint = skill_dir / "SKILL.md"
     if not entrypoint.is_file():
         report(skill_dir, "no SKILL.md in skill directory")
@@ -227,7 +229,7 @@ def validate_skill(skill_dir: Path, report) -> None:
 
 
 def check_readme(root: Path, skill_names: list[str], report) -> None:
-    """The README skills table must name exactly the skills that exist."""
+    """Check that the README skills table names exactly the skills present."""
     readme = root / "README.md"
     if not readme.is_file():
         report(readme, "no README.md")
@@ -242,7 +244,7 @@ def check_readme(root: Path, skill_names: list[str], report) -> None:
 
 
 def check_agent_guides(root: Path, report) -> None:
-    """The per-agent guidance files must be symlinks to AGENTS.md."""
+    """Check that the per-agent guidance files are symlinks to AGENTS.md."""
     canonical = root / "AGENTS.md"
     if not canonical.is_file():
         report(canonical, "no AGENTS.md")
@@ -263,6 +265,13 @@ def check_agent_guides(root: Path, report) -> None:
 
 
 def main() -> int:
+    """Validate every skill and report the problems found.
+
+    Returns
+    -------
+    status : `int`
+        Zero when every skill is valid, one otherwise.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--root",
