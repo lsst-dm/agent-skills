@@ -95,6 +95,22 @@ target_dir() {
     esac
 }
 
+# The Codex location other than the one target_dir chose for this HOME, so a
+# stale registration left there by an earlier run can be found and cleaned
+# up. Empty for every other agent, since only Codex has two candidate
+# locations.
+other_target_dir() {
+    case "$1" in
+        codex)
+            if [ -d "$HOME/.agents" ]; then
+                printf '%s\n' "$HOME/.codex/skills"
+            else
+                printf '%s\n' "$HOME/.agents/skills"
+            fi
+            ;;
+    esac
+}
+
 resolve_dir() { ( cd "$1" 2>/dev/null && pwd -P ); }
 
 # True when target is a symlink into this repository, or a copy this
@@ -158,11 +174,29 @@ exit_status=0
 
 for agent in ${AGENTS[@]+"${AGENTS[@]}"}; do
     dest=$(target_dir "$agent")
+    other_dest=$(other_target_dir "$agent")
     for skill in ${SELECTED[@]+"${SELECTED[@]}"}; do
         src="$SKILLS_DIR/$skill"
         target="$dest/$skill"
+        other_target=""
+        [ -n "$other_dest" ] && other_target="$other_dest/$skill"
 
         if [ "$UNINSTALL" = 1 ]; then
+            if [ -n "$other_target" ] &&
+               { [ -e "$other_target" ] || [ -L "$other_target" ]; }; then
+                if installed_from_repo "$other_target" "$src"; then
+                    if [ "$DRY_RUN" = 1 ]; then
+                        echo "would remove $other_target"
+                    else
+                        rm -rf "$other_target"
+                        echo "removed $other_target"
+                    fi
+                else
+                    err "not installed from this repository, leaving alone: $other_target"
+                    exit_status=1
+                fi
+            fi
+
             if [ ! -e "$target" ] && [ ! -L "$target" ]; then
                 continue
             fi
@@ -178,6 +212,24 @@ for agent in ${AGENTS[@]+"${AGENTS[@]}"}; do
                 exit_status=1
             fi
             continue
+        fi
+
+        # A skill is registered in exactly one Codex location. If an earlier
+        # run left it registered in the other one, e.g. because ~/.agents
+        # appeared after ~/.codex was chosen, clean that up rather than
+        # leaving a stale duplicate the user never asked to keep.
+        if [ -n "$other_target" ] &&
+           { [ -e "$other_target" ] || [ -L "$other_target" ]; }; then
+            if installed_from_repo "$other_target" "$src"; then
+                if [ "$DRY_RUN" = 1 ]; then
+                    echo "would remove stale duplicate: $other_target"
+                else
+                    rm -rf "$other_target" || { exit_status=1; continue; }
+                    echo "removed stale duplicate: $other_target"
+                fi
+            else
+                err "warning: not installed from this repository, leaving alone: $other_target"
+            fi
         fi
 
         if [ -e "$target" ] || [ -L "$target" ]; then

@@ -57,6 +57,37 @@ HOME_DIR=$(fresh_home .codex)
 run_install "$HOME_DIR" >/dev/null
 check "codex falls back to .codex" test -L "$HOME_DIR/.codex/skills/lsst-eups"
 
+# When ~/.agents appears after a skill was registered under ~/.codex, a
+# later install moves the registration rather than leaving both in place.
+HOME_DIR=$(fresh_home .codex)
+run_install "$HOME_DIR" >/dev/null
+check "codex-only install lands in .codex" \
+    test -L "$HOME_DIR/.codex/skills/lsst-eups"
+mkdir -p "$HOME_DIR/.agents"
+OUT=$(run_install "$HOME_DIR")
+check "re-install after .agents appears lands in .agents" \
+    test -L "$HOME_DIR/.agents/skills/lsst-eups"
+check "re-install removes the stale .codex entry" \
+    test ! -e "$HOME_DIR/.codex/skills/lsst-eups"
+check "the stale duplicate removal is reported" \
+    assert_contains "$OUT" "stale duplicate"
+
+# A foreign entry in the non-preferred Codex location is reported but never
+# touched, and the run still succeeds.
+HOME_DIR=$(fresh_home .codex)
+mkdir -p "$HOME_DIR/.codex/skills/lsst-eups"
+printf 'precious\n' > "$HOME_DIR/.codex/skills/lsst-eups/SKILL.md"
+mkdir -p "$HOME_DIR/.agents"
+OUT=$(run_install "$HOME_DIR")
+check "install with a foreign duplicate still succeeds" \
+    assert_status 0 env HOME="$HOME_DIR" "$INSTALL"
+check "the foreign duplicate is named in a warning" \
+    assert_contains "$OUT" "$HOME_DIR/.codex/skills/lsst-eups"
+check "the foreign duplicate survives" \
+    grep -q precious "$HOME_DIR/.codex/skills/lsst-eups/SKILL.md"
+check "the preferred location is still installed" \
+    test -L "$HOME_DIR/.agents/skills/lsst-eups"
+
 # Antigravity uses the location all variants read.
 HOME_DIR=$(fresh_home .gemini)
 run_install "$HOME_DIR" >/dev/null
