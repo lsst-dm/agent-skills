@@ -10,8 +10,8 @@ description: Use when work on an LSST Science Pipelines package needs the EUPS s
 Run every stack-dependent command through `scripts/lsst-run` in this skill's directory.
 Invoke it by its path within this skill directory; the examples below write `lsst-run` for brevity.
 
-It runs the command against a pristine environment holding `lsst_distrib` at a build tag plus any local package clones named on the command line.
-That environment is cached, so only the first call per build tag pays the few seconds of initialization and later calls add about a quarter of a second.
+It runs the command against a pristine environment holding `lsst_distrib` at a chosen tag plus any local package clones named on the command line.
+That environment is cached, so only the first call per tag pays the few seconds of initialization and later calls add about a quarter of a second.
 
 Each command runs in a fresh shell, so environment variables never persist from one call to the next.
 Never try to "activate" the environment once and reuse it, and never hand-roll `source envconfig && setup ...` chains, because sourcing inside a pipeline silently discards the environment.
@@ -56,16 +56,23 @@ List dependencies' `-l` before the package being worked on, so the working packa
 | With a local dependency clone | `lsst-run -l ~/work/daf_butler -l . -- pytest ...` |
 | Stack CLI tools | `lsst-run -- butler ...`, `lsst-run -- pipetask ...`, `lsst-run -- eups ...` |
 | Ad-hoc python | `lsst-run -- python -c "import lsst.afw ..."` |
-| Specific build tag | `lsst-run -t b8411 -l . -- pytest ...` |
+| Specific tag | `lsst-run -t b8411 -l . -- pytest ...`, `lsst-run -t w_2026_05 -- ...` |
 | Show available tags | `lsst-run --list-tags` |
 
 ## Tags
 
-`lsst_distrib` in an lsstsw stack carries only `bNNNN` build tags — `setup -t w_2026_24 lsst_distrib` fails even though individual packages carry weekly tags.
-`lsst-run` selects the highest `bNNNN` currently carried by `lsst_distrib` unless `-t` is given, and reports the choice on stderr.
+Which tags `lsst_distrib` carries depends on how the stack was built.
+An lsstsw stack numbers its own builds `bNNNN`, and there `setup -t w_2026_24 lsst_distrib` fails even though individual packages carry weekly tags.
+A shared installation built by lsstinstall, such as one at a data facility, carries the permanent weekly tags `w_YYYY_WW` instead, and a release installation carries `vNN_N_N`.
+
+Unless `-t` is given, `lsst-run` picks the newest tag of the most specific family the stack has — builds, then weeklies, then releases, then dailies — and reports the choice on stderr.
+Run `lsst-run --list-tags` to see what the current stack actually offers.
+
+`-t` accepts any of those forms, and rejects a movable tag such as `current`.
+A movable tag would fix the cached environment to whatever it pointed at when the cache was built, which is the one thing the cache must never do.
 
 Build tag numbers are local to one EUPS tree and are not stable across a redeployment of that tree.
-A tag from an earlier tree will be rejected; run `lsst-run --list-tags` to see what the current tree offers.
+A tag from an earlier tree will be rejected; `--list-tags` shows what this one has.
 
 ## Rules
 
@@ -81,5 +88,5 @@ A tag from an earlier tree will be rejected; run `lsst-run --list-tags` to see w
 | `no active LSST environment` | Ask the user to source `envconfig` or `loadLSST.bash` and restart the agent |
 | `ModuleNotFoundError: lsst.<pkg>.version` or local clone won't import | `lsst-run -l . -- scons python` |
 | Import picks up stack version instead of local clone | Missing `-l` for that clone |
-| `lsst_distrib has no build tag ...` | Pick one of the tags the error lists, or run `lsst-run --list-tags` |
+| `lsst_distrib has no tag ...` | Pick one of the tags the error lists, or run `lsst-run --list-tags` |
 | Dependency changes in `ups/*.table` not taking effect | None needed; locals are set up on every call |

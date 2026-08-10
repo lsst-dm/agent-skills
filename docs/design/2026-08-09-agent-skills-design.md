@@ -200,14 +200,24 @@ It gives speed: a cold activation costs about 6.6 s, while restoring a snapshot 
 
 Tags are resolved and validated through the public EUPS command-line interface, not by reading `ups_db` internals, because the internal layout is not a stable contract.
 
-The latest build tag comes from `eups list lsst_distrib --raw`, taking the third field, splitting it on colons, and keeping entries matching `^b[0-9]+$`.
-Each entry then has its leading `b` stripped, the results are sorted numerically and deduplicated, and the `b` is put back, so the final line is the highest tag.
+Every tag comes from `eups list lsst_distrib --raw`, taking the third field and splitting it on colons.
 This costs about 0.10 s and runs in the inherited environment, which already has `eups` on the path.
 
-Stripping the `b` before sorting is required rather than a plain lexical sort on the tag strings: a lexical sort orders `b10000` before `b8411` and `b9`, so the default tag would become wrong once build numbers reach five digits.
+Which tags a stack carries depends on how it was built, and the wrapper has to work with both.
+An lsstsw checkout numbers its own builds `bNNNN`.
+A shared installation built by lsstinstall, such as one at a data facility, carries the permanent weekly tags `w_YYYY_WW`, and a release installation carries `vNN_N_N`.
+Both kinds of stack also carry dated dailies, `d_YYYY_MM_DD`.
 
-An explicit `-t TAG` is validated with `eups list -t TAG lsst_distrib`, which exits 2 for an unsupported tag and 0 otherwise.
-On failure the wrapper prints the available build tags.
+The default is the newest tag of the most specific family present, tried in the order build, weekly, release, daily.
+Preferring by family rather than mixing them keeps an lsstsw stack on its own build numbers even though it also carries dailies, and lets a site installation fall through to its weeklies.
+
+Ordering within a family uses `sort -V`, which compares digit runs numerically.
+That matters in both directions: a lexical sort places `b10000` before `b8411` and `b9`, and it places `w_2026_10` before `w_2026_5`.
+
+An explicit `-t TAG` is checked twice.
+Its shape must match one of the families, which rejects a movable tag such as `current`: the environment snapshot is keyed on the tag, so a tag that moves would pin a user to a stale build indefinitely.
+It is then validated against the tree with `eups list -t TAG lsst_distrib`, which exits 2 for an unsupported tag and 0 otherwise.
+On failure the wrapper prints the tags this stack actually has.
 
 The resolved tag is never cached.
 Caching it was the cause of a real failure: the cache was keyed on a hash of `$LSSTSW` and validated only against the regular expression `^b[0-9]+$`, so after the EUPS tree was deleted and redeployed, the recorded `b8290` still looked structurally valid and was reused indefinitely even though it no longer existed in the tree.

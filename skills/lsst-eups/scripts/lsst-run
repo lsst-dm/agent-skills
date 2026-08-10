@@ -28,6 +28,38 @@ CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/lsst-run"
 err() { echo "lsst-run: $*" >&2; }
 die() { err "$*"; exit 1; }
 
+# Tag families that name a fixed point in a stack's history, most preferred
+# first. An lsstsw stack numbers its own builds bNNNN. An lsstinstall stack,
+# such as a shared site installation, carries the permanent weekly tags
+# instead, and release installations carry vNN_N_N. Daily tags are dated and
+# so are also fixed, but they make the least useful default.
+#
+# Movable tags such as `current` are deliberately absent. The environment
+# snapshot is keyed on the tag, so a tag that moves would pin a user to a
+# stale build indefinitely.
+TAG_FAMILIES="b w v d"
+
+tag_family_pattern() {
+    case "$1" in
+        b) printf '%s\n' '^b[0-9]+$' ;;
+        w) printf '%s\n' '^w_[0-9]+_[0-9]+$' ;;
+        v) printf '%s\n' '^v[0-9][0-9_]*$' ;;
+        d) printf '%s\n' '^d_[0-9]+_[0-9]+_[0-9]+$' ;;
+        *) return 1 ;;
+    esac
+}
+
+is_fixed_tag() {
+    local family
+    for family in $TAG_FAMILIES; do
+        if printf '%s\n' "$1" |
+                grep -qE "$(tag_family_pattern "$family")"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 TAG=""
 LOCALS=()
 LIST_TAGS=0
@@ -36,10 +68,8 @@ while [ $# -gt 0 ]; do
     case "$1" in
         -t)
             [ $# -ge 2 ] || die "-t requires a tag argument"
-            case "$2" in
-                b[0-9]*) ;;
-                *) die "-t takes an immutable bNNNN build tag, not $2" ;;
-            esac
+            is_fixed_tag "$2" || die \
+                "-t needs a fixed tag (bNNNN, w_YYYY_WW, vNN_N_N or d_YYYY_MM_DD), not $2"
             TAG="$2"
             shift 2
             ;;
@@ -82,34 +112,61 @@ if [ -z "${EUPS_PATH:-}" ] || [ -z "${EUPS_DIR:-}" ] || \
     exit 1
 fi
 
-# Build tags carried by lsst_distrib, lowest first. A version can carry several
-# colon-separated tags in any order, so split them apart rather than trusting
-# position. Sorting strips the leading b so an ordinary numeric sort applies;
-# a lexical sort would place b10000 before b9.
-build_tags() {
+# Every tag lsst_distrib carries. A version can carry several colon-separated
+# tags in any order, so split them apart rather than trusting position.
+all_tags() {
     eups list lsst_distrib --raw 2>/dev/null |
         awk -F'|' '{print $3}' |
         tr ':' '\n' |
-        grep -E '^b[0-9]+$' |
-        sed 's/^b//' |
-        sort -n -u |
-        sed 's/^/b/'
+        sort -u
+}
+
+# The fixed tags of one family, oldest first. sort -V compares digit runs
+# numerically, so it orders b9 before b10000 and w_2026_5 before w_2026_10,
+# where a lexical sort would get both wrong.
+tags_of_family() {
+    local pattern
+    pattern=$(tag_family_pattern "$1") || return 1
+    all_tags | grep -E "$pattern" | sort -V
+}
+
+# Every fixed tag, grouped by family, most preferred family first.
+usable_tags() {
+    local family
+    for family in $TAG_FAMILIES; do
+        tags_of_family "$family"
+    done
+}
+
+# The default: the newest tag of the most preferred family this stack has.
+# Preferring by family rather than mixing them keeps an lsstsw stack on its
+# own build numbers even though it also carries dailies.
+latest_tag() {
+    local family newest
+    for family in $TAG_FAMILIES; do
+        newest=$(tags_of_family "$family" | tail -1)
+        if [ -n "$newest" ]; then
+            printf '%s\n' "$newest"
+            return 0
+        fi
+    done
+    return 1
 }
 
 if [ "$LIST_TAGS" = 1 ]; then
-    build_tags
+    usable_tags
     exit 0
 fi
 
 if [ -n "$TAG" ]; then
     if ! eups list -t "$TAG" lsst_distrib >/dev/null 2>&1; then
-        err "lsst_distrib has no build tag $TAG; available tags are:"
-        build_tags >&2
+        err "lsst_distrib has no tag $TAG; usable tags are:"
+        usable_tags >&2
         exit 1
     fi
 else
-    TAG=$(build_tags | tail -1)
-    [ -n "$TAG" ] || die "could not determine the latest lsst_distrib build tag"
+    TAG=$(latest_tag) || die \
+        "lsst_distrib carries no build, weekly, release or daily tag"
 fi
 err "using lsst_distrib tag $TAG"
 

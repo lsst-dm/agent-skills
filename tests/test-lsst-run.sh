@@ -43,8 +43,24 @@ check "-l on a file exits non-zero" \
     assert_status 1 "$LSST_RUN" -l "$TMPFILE" -- true
 rm -f "$TMPFILE"
 
+# A movable tag would pin the snapshot to whatever it pointed at on the day it
+# was cached, so only tags naming a fixed point are accepted.
 OUT=$(run_unactivated -t current -- true 2>&1)
-check "a movable tag is refused" assert_contains "$OUT" "immutable"
+check "a movable tag is refused" assert_contains "$OUT" "needs a fixed tag"
+
+OUT=$(run_unactivated -t nonsense -- true 2>&1)
+check "an unrecognized tag is refused" assert_contains "$OUT" "needs a fixed tag"
+
+# Stacks differ in which family they use: lsstsw numbers its own builds, while
+# an lsstinstall site installation carries permanent weeklies and releases.
+# All of them must get past the shape check, whatever this machine has.
+# Getting as far as the environment check is the proof: a tag rejected on
+# shape never reaches it.
+for fixed_tag in b8411 w_2026_05 v24_0_0 d_2026_08_05; do
+    OUT=$(run_unactivated -t "$fixed_tag" -- true 2>&1)
+    check "the fixed tag $fixed_tag passes the shape check" \
+        assert_contains "$OUT" "no active LSST environment"
+done
 
 if [ -z "${EUPS_PATH:-}" ] || [ -z "${LSST_CONDA_ENV_NAME:-}" ]; then
     echo "  skip: no active LSST environment; stack-dependent checks skipped"
