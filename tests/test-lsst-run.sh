@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016  # fixtures pass literal $VARS to nested shells
 # Tests for skills/lsst-eups/scripts/lsst-run.
 # Cases needing a real stack skip themselves when no environment is active.
 set -uo pipefail
