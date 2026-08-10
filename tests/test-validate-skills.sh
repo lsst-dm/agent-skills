@@ -115,4 +115,19 @@ printf 'Invoke it as `~/.claude/skills/hardcoded/scripts/thing`.\n' >> "$DIR/SKI
 OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
 check "hardcoded agent path is reported" assert_contains "$OUT" "hardcoded install path"
 
+# Force the PyYAML-absent path so the fallback parser is genuinely exercised.
+SHIM=$(mktemp -d "$WORK/shim.XXXXXX")
+printf 'raise ImportError("simulated missing PyYAML")\n' > "$SHIM/yaml.py"
+
+ROOT=$(new_root); make_skill "$ROOT" fallback-ok >/dev/null
+check "fallback parser accepts a valid skill" \
+    assert_status 0 env PYTHONPATH="$SHIM" "$VALIDATE" --root "$ROOT"
+
+# An inline comment must not become part of the value.
+ROOT=$(new_root); DIR=$(make_skill "$ROOT" commented)
+perl -pi -e 's/^name: commented$/name: commented # an inline comment/' \
+    "$DIR/SKILL.md"
+check "fallback parser strips an inline comment" \
+    assert_status 0 env PYTHONPATH="$SHIM" "$VALIDATE" --root "$ROOT"
+
 finish
