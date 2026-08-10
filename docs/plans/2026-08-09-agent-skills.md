@@ -1206,7 +1206,7 @@ Each command runs in a fresh shell, so environment variables never persist from 
 Never try to "activate" the environment once and reuse it, and never hand-roll `source envconfig && setup ...` chains, because sourcing inside a pipeline silently discards the environment.
 
 ```
-lsst-run [-t TAG] [-l PATH]... [--list-tags] -- COMMAND [ARGS...]
+lsst-run [-t TAG] [-l PATH]... [--list-tags] [--] COMMAND [ARGS...]
 ```
 
 ## Prerequisite
@@ -1260,7 +1260,8 @@ A tag from an earlier tree will be rejected; run `lsst-run --list-tags` to see w
 
 - Never `pip install` into the stack conda environment.
 - Never modify the installed stack under `$EUPS_PATH`; local work happens in clones activated via `-l` (`setup -k -r`).
-- When the EUPS environment is the chosen environment, never run bare `python`/`pytest` for code that imports `lsst.*` — always go through `lsst-run`. (If the user chose the pip environment for a dual-use package, ordinary tools apply and this skill stays out of the way.)
+- When the EUPS environment is the chosen environment, never run bare `python`/`pytest` for code that imports `lsst.*` — always go through `lsst-run`.
+  If the user chose the pip environment for a dual-use package, ordinary tools apply and this skill stays out of the way.
 
 ## Troubleshooting
 
@@ -1269,7 +1270,7 @@ A tag from an earlier tree will be rejected; run `lsst-run --list-tags` to see w
 | `no active LSST environment` | Ask the user to source `envconfig` or `loadLSST.bash` and restart the agent |
 | `ModuleNotFoundError: lsst.<pkg>.version` or local clone won't import | `lsst-run -l . -- scons python` |
 | Import picks up stack version instead of local clone | Missing `-l` for that clone |
-| `lsst_distrib has no build tag ...` | `lsst-run --list-tags`, pick a listed `bNNNN` |
+| `lsst_distrib has no build tag ...` | Pick one of the tags the error lists, or run `lsst-run --list-tags` |
 | Dependency changes in `ups/*.table` not taking effect | None needed; locals are set up on every call |
 ```
 
