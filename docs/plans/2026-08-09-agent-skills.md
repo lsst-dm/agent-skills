@@ -1635,6 +1635,16 @@ for agent in ${AGENTS[@]+"${AGENTS[@]}"}; do
                     echo "up to date: $target"
                     continue
                 fi
+                if { [ "$MODE" = link ] && [ ! -L "$target" ]; } ||
+                   { [ "$MODE" = copy ] && [ -L "$target" ]; }; then
+                    # Switching between link and copy undoes a deliberate
+                    # choice, so it is never done by default.
+                    if [ "$FORCE" != 1 ]; then
+                        err "$target is installed as the other mode; pass --force to switch it"
+                        exit_status=1
+                        continue
+                    fi
+                fi
                 # Ours already, so nothing needs preserving. Replacing rather
                 # than skipping is what lets a copy pick up a pull.
                 if [ "$DRY_RUN" = 1 ]; then
@@ -1692,7 +1702,7 @@ bash tests/test-install.sh
 shellcheck install.sh tests/test-install.sh
 ```
 
-Expected: `36 checks, 0 failed`. shellcheck silent.
+Expected: `42 checks, 0 failed`. shellcheck silent.
 
 - [ ] **Step 5: Install for real and confirm the conflict guard**
 
@@ -1835,8 +1845,10 @@ The installer reports the conflict and exits non-zero; `--force` moves the exist
 
 Under the default symlink installation, `git pull` is enough — every agent sees the updated skill immediately.
 
-Under `--copy`, re-run `./install.sh --copy` after pulling, otherwise the installed copies keep the version they were installed with.
-A copy this installer made records its origin, so re-running refreshes it in place without needing `--force`.
+Under `--copy`, re-run `./install.sh --copy` after pulling to refresh the installed copies.
+A copy this installer made records its origin, so re-running in the same mode refreshes it in place without `--force`.
+
+Switching an installed skill between link and copy needs `--force`, so a routine `./install.sh` will not quietly turn a copy back into a symlink.
 
 ## Creating a skill
 
