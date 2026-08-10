@@ -247,9 +247,11 @@ def check_agent_guides(root: Path, report) -> None:
             else:
                 report(path, "missing; must be a symlink to AGENTS.md")
             continue
-        target = os.readlink(path)
-        if target != "AGENTS.md":
-            report(path, f"symlink points at {target}, expected AGENTS.md")
+        if path.resolve() != canonical.resolve():
+            report(
+                path,
+                f"symlink points at {os.readlink(path)}, expected AGENTS.md",
+            )
 
 
 def main() -> int:

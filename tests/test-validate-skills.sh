@@ -172,4 +172,19 @@ rm -f "$ROOT/AGENTS.md"
 OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
 check "missing AGENTS.md is reported" assert_contains "$OUT" "AGENTS.md"
 
+# An equivalent spelling of the same target is still correct.
+ROOT=$(new_root); make_skill "$ROOT" equivalent-link >/dev/null
+rm "$ROOT/GEMINI.md"
+( cd "$ROOT" && ln -s ./AGENTS.md GEMINI.md )
+check "an equivalent symlink target passes" \
+    assert_status 0 "$VALIDATE" --root "$ROOT"
+
+# A link to some other file is not an alias.
+ROOT=$(new_root); make_skill "$ROOT" wrong-link >/dev/null
+rm "$ROOT/GEMINI.md"
+( cd "$ROOT" && ln -s README.md GEMINI.md )
+OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
+check "a symlink to another file is reported" \
+    assert_contains "$OUT" "expected AGENTS.md"
+
 finish

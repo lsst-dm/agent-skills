@@ -20,6 +20,9 @@ See the portability guidelines in [README.md](README.md).
 
 The rule the validator enforces mechanically is that a skill must never name `~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills`, or `~/.gemini/.../skills`.
 
+[AGENTS.md](AGENTS.md) states the same rules in the form an agent working in this repository reads.
+Keep the two in step when either changes.
+
 ## Helper scripts
 
 Helper scripts are ordinary command-line programs.

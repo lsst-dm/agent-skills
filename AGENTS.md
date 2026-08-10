@@ -75,6 +75,9 @@ Put detailed supporting material in `references/` and reusable deterministic ope
 
 Agent-specific metadata that other agents ignore, such as `agents/openai.yaml` for Codex, is additive and belongs in the canonical skill directory.
 
+[CONTRIBUTING.md](CONTRIBUTING.md) states the same rules for human contributors.
+Keep the two in step when either changes.
+
 ## Helper scripts
 
 Helper scripts are ordinary command-line programs.
