@@ -20,3 +20,11 @@ repos:
     rev: v1.7.12
     hooks:
       - id: actionlint
+  # Ships prebuilt shellcheck binaries through PyPI, so it needs no Docker
+  # and works on macOS. --external-sources lets shellcheck follow the
+  # `# shellcheck source=` directives when a file is checked on its own.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        args: [--external-sources]
