@@ -193,10 +193,11 @@ It gives speed: a cold activation costs about 6.6 s, while restoring a snapshot 
 
 Tags are resolved and validated through the public EUPS command-line interface, not by reading `ups_db` internals, because the internal layout is not a stable contract.
 
-The latest build tag comes from `eups list lsst_distrib --raw`, taking the third field, splitting it on colons, keeping entries matching `^b[0-9]+$`, and selecting the last by `sort -V`.
+The latest build tag comes from `eups list lsst_distrib --raw`, taking the third field, splitting it on colons, and keeping entries matching `^b[0-9]+$`.
+Each entry then has its leading `b` stripped, the results are sorted numerically and deduplicated, and the `b` is put back, so the final line is the highest tag.
 This costs about 0.10 s and runs in the inherited environment, which already has `eups` on the path.
 
-`sort -V` is required rather than plain `sort`: a lexical sort orders `b10000` before `b8411` and `b9`, so the default tag would become wrong once build numbers reach five digits.
+Stripping the `b` before sorting is required rather than a plain lexical sort on the tag strings: a lexical sort orders `b10000` before `b8411` and `b9`, so the default tag would become wrong once build numbers reach five digits.
 
 An explicit `-t TAG` is validated with `eups list -t TAG lsst_distrib`, which exits 2 for an unsupported tag and 0 otherwise.
 On failure the wrapper prints the available build tags.
@@ -262,7 +263,8 @@ Relative paths are resolved to absolute.
 `tests/test-lsst-run.sh` covers argument parsing, the unactivated-environment error, tag resolution and rejection of an invalid tag, snapshot reuse, and local-clone layering.
 Tests requiring a real stack skip themselves cleanly when no LSST environment is activated, so CI without a stack still passes.
 
-Manual verification covers both environment flavors: the existing lsstsw tree exercises the `envconfig` branch, and a small lsstinstall-derived installation exercises the `loadLSST.sh` branch, which is the only way to test that path.
+Manual verification covers the `envconfig` branch against the existing lsstsw tree.
+The `loadLSST.sh` branch has no lsstinstall tree available to test against yet, so it remains verified only by inspection; exercising it against a real lsstinstall installation is still outstanding.
 
 ## Documentation
 
