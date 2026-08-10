@@ -192,18 +192,20 @@ for agent in ${AGENTS[@]+"${AGENTS[@]}"}; do
                     echo "would replace $target"
                 else
                     rm -rf "$target" || { exit_status=1; continue; }
+                    echo "replaced $target"
                 fi
             elif [ "$FORCE" != 1 ]; then
                 err "$target already exists; pass --force to replace it"
                 exit_status=1
                 continue
             else
-                if [ "$DRY_RUN" = 1 ]; then
-                    echo "would move $target aside to $target.bak"
-                elif [ -e "$target.bak" ] || [ -L "$target.bak" ]; then
+                if [ -e "$target.bak" ] || [ -L "$target.bak" ]; then
                     err "$target.bak already exists; move or remove it first"
                     exit_status=1
                     continue
+                fi
+                if [ "$DRY_RUN" = 1 ]; then
+                    echo "would move $target aside to $target.bak"
                 else
                     mv "$target" "$target.bak" || { exit_status=1; continue; }
                     echo "moved aside: $target -> $target.bak"

@@ -93,6 +93,17 @@ check "existing directory is preserved" \
     grep -q current "$HOME_DIR/.claude/skills/lsst-eups/SKILL.md"
 check "backup conflict is reported" assert_contains "$OUT" ".bak"
 
+# A dry run must predict the refusal, not an action that cannot happen.
+HOME_DIR=$(fresh_home .claude)
+mkdir -p "$HOME_DIR/.claude/skills/lsst-eups" \
+         "$HOME_DIR/.claude/skills/lsst-eups.bak"
+printf 'current\n' > "$HOME_DIR/.claude/skills/lsst-eups/SKILL.md"
+printf 'older\n' > "$HOME_DIR/.claude/skills/lsst-eups.bak/SKILL.md"
+OUT=$(run_install "$HOME_DIR" --force --dry-run)
+check "dry run predicts the backup conflict" assert_contains "$OUT" ".bak"
+check "dry run exits non-zero on a backup conflict" \
+    assert_status 1 env HOME="$HOME_DIR" "$INSTALL" --force --dry-run
+
 # --dry-run must not move a foreign directory aside.
 HOME_DIR=$(fresh_home .claude)
 mkdir -p "$HOME_DIR/.claude/skills/lsst-eups"
