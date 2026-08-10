@@ -42,6 +42,14 @@ Install `shellcheck` for the full set of shell checks; the validator skips it wh
 
 Tests that need a live LSST stack skip themselves when no environment is active, so the suite passes on a machine without one.
 
+To check the bash 3.2 floor that macOS ships, run the suite under the system bash:
+
+```bash
+BASH_BIN=/bin/bash ./tests/run-all.sh
+```
+
+CI does this automatically on its macOS leg.
+
 ## Review
 
 Changes go through pull request review.

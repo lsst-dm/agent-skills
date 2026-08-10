@@ -5,13 +5,22 @@ on:
     branches: ["**"]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Install shellcheck
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
       - name: Validate skills
@@ -19,3 +28,7 @@ jobs:
 
       - name: Run tests
         run: ./tests/run-all.sh
+
+      - name: Run tests under the bash 3.2 floor
+        if: runner.os == 'macOS'
+        run: BASH_BIN=/bin/bash ./tests/run-all.sh

@@ -4,6 +4,10 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
 
+# The interpreter used for each test file. Override it to check the bash 3.2
+# floor that macOS ships: BASH_BIN=/bin/bash ./tests/run-all.sh
+BASH_BIN=${BASH_BIN:-bash}
+
 status=0
 
 echo "== validate-skills"
@@ -11,7 +15,7 @@ echo "== validate-skills"
 
 for test_script in tests/test-*.sh; do
     [ -f "$test_script" ] || continue
-    bash "$test_script" || status=1
+    "$BASH_BIN" "$test_script" || status=1
 done
 
 exit "$status"
