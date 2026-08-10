@@ -130,4 +130,17 @@ perl -pi -e 's/^name: commented$/name: commented # an inline comment/' \
 check "fallback parser strips an inline comment" \
     assert_status 0 env PYTHONPATH="$SHIM" "$VALIDATE" --root "$ROOT"
 
+# A value that is only a comment must parse as empty, not as the comment text.
+ROOT=$(new_root); DIR=$(make_skill "$ROOT" comment-only)
+perl -pi -e 's/^description: .*$/description: # placeholder/' "$DIR/SKILL.md"
+OUT=$(env PYTHONPATH="$SHIM" "$VALIDATE" --root "$ROOT" 2>&1) || true
+check "fallback parser treats a comment-only value as empty" \
+    assert_contains "$OUT" 'missing a `description` field'
+
+# A tab before the marker also starts a comment.
+ROOT=$(new_root); DIR=$(make_skill "$ROOT" tab-comment)
+perl -pi -e 's/^name: tab-comment$/name: tab-comment\t# note/' "$DIR/SKILL.md"
+check "fallback parser strips a tab-delimited comment" \
+    assert_status 0 env PYTHONPATH="$SHIM" "$VALIDATE" --root "$ROOT"
+
 finish

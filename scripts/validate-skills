@@ -85,12 +85,14 @@ def parse_flat_mapping(block: str) -> tuple[dict, list[str]]:
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
+        elif value.startswith("#"):
+            value = ""
         else:
-            # YAML only starts an inline comment at a `#` preceded by
-            # whitespace, so a bare `#` inside a value is kept.
-            comment = value.find(" #")
-            if comment != -1:
-                value = value[:comment].rstrip()
+            # YAML starts an inline comment at a `#` preceded by whitespace,
+            # so a `#` inside a word is part of the value.
+            comment = re.search(r"\s#", value)
+            if comment:
+                value = value[: comment.start()].rstrip()
         fields[key.strip()] = value
     return fields, errors
 
