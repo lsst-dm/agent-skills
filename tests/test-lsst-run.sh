@@ -60,4 +60,26 @@ check "missing -l path is rejected" assert_contains "$OUT" "not found"
 check "missing -l path exits non-zero" \
     assert_status 1 "$LSST_RUN" -l /nonexistent/clone -- true
 
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/lsst-run"
+
+OUT=$("$LSST_RUN" -- python -c 'import lsst.daf.butler; print("import-ok")' 2>&1)
+check "command runs against lsst_distrib" assert_contains "$OUT" "import-ok"
+
+check "snapshot was cached" bash -c 'ls "$1"/env-*.sh >/dev/null 2>&1' _ "$CACHE_DIR"
+
+# The snapshot must not leak the launching shell's local setups. lsst_build is
+# set up by envconfig in an lsstsw tree, so assert on a marker we control.
+OUT=$(SETUP_FAKE_MARKER=leaked "$LSST_RUN" -- \
+    sh -c 'echo "marker=[${SETUP_FAKE_MARKER:-}]"' 2>&1)
+check "launching shell setup vars do not leak" \
+    assert_contains "$OUT" "marker=[]"
+
+OUT=$("$LSST_RUN" -- sh -c 'echo "tag=$SETUP_LSST_DISTRIB"' 2>&1)
+check "lsst_distrib is set up in the snapshot" assert_contains "$OUT" "lsst_distrib"
+
+# A second call must reuse the cached snapshot rather than rebuilding it.
+OUT=$("$LSST_RUN" -- true 2>&1)
+check "warm call does not rebuild the snapshot" \
+    assert_not_contains "$OUT" "building environment"
+
 finish

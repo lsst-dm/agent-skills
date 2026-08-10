@@ -23,7 +23,6 @@
 # The isolation keeps a local `setup` in the launching shell from silently
 # changing what the command sees; the cache keeps repeat calls fast.
 
-# shellcheck disable=SC2034  # consumed by the environment cache path described above
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/lsst-run"
 
 err() { echo "lsst-run: $*" >&2; }
@@ -109,3 +108,102 @@ else
     [ -n "$TAG" ] || die "could not determine the latest lsst_distrib build tag"
 fi
 err "using lsst_distrib tag $TAG"
+
+# shasum lives in the conda environment and sha256sum is not universal, so try
+# both before giving up.
+hash_of() {
+    if command -v shasum >/dev/null 2>&1; then
+        printf '%s\n' "$@" | shasum -a 256 | cut -c1-16
+    elif command -v sha256sum >/dev/null 2>&1; then
+        printf '%s\n' "$@" | sha256sum | cut -c1-16
+    else
+        die "neither shasum nor sha256sum is available"
+    fi
+}
+
+# The script that activates this environment from scratch. lsstsw checkouts
+# provide bin/envconfig at $LSSTSW; lsstinstall trees provide loadLSST.sh at the
+# root of the tree, which is three levels above the conda environment prefix.
+activation_script() {
+    local root candidate
+    if [ -n "${LSSTSW:-}" ] && [ -f "$LSSTSW/bin/envconfig" ]; then
+        printf '%s\n' "$LSSTSW/bin/envconfig"
+        return 0
+    fi
+    [ -n "${CONDA_PREFIX:-}" ] || return 1
+    root=$( cd "$CONDA_PREFIX/../../.." 2>/dev/null && pwd -P ) || return 1
+    for candidate in "$root/loadLSST.sh" "$root/loadLSST.bash" \
+                     "$root/bin/envconfig"; do
+        if [ -f "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+SNAPSHOT="$CACHE_DIR/env-$(hash_of "$LSST_CONDA_ENV_NAME" "$EUPS_PATH" "$TAG").sh"
+
+build_snapshot() {
+    local script
+    script=$(activation_script) || die \
+        "cannot locate envconfig or loadLSST.sh for $LSST_CONDA_ENV_NAME"
+    err "building environment snapshot for tag $TAG (this takes a few seconds)..."
+    mkdir -p "$CACHE_DIR" || die "cannot create cache directory $CACHE_DIR"
+
+    # env -i drops everything the launching shell had set up, so the snapshot
+    # holds lsst_distrib and nothing else. LSST_CONDA_ENV_NAME is passed
+    # through because both activation scripts honour it as an input and it
+    # selects the same conda environment the user activated.
+    # shellcheck disable=SC2016  # $1/$2 below are for the nested bash -c, not this shell
+    if ! env -i \
+        HOME="$HOME" \
+        USER="${USER:-}" \
+        TERM="${TERM:-dumb}" \
+        PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+        LSST_CONDA_ENV_NAME="$LSST_CONDA_ENV_NAME" \
+        ${LSSTSW:+LSSTSW="$LSSTSW"} \
+        bash -c '
+            source "$1" 1>&2 || exit 1
+            setup -t "$2" lsst_distrib || exit 1
+            export -p | grep -Ev "^declare -x (PWD|OLDPWD|SHLVL|_)="
+        ' _ "$script" "$TAG" > "$SNAPSHOT.tmp"
+    then
+        rm -f "$SNAPSHOT.tmp"
+        die "failed to build the environment snapshot for tag $TAG"
+    fi
+    mv "$SNAPSHOT.tmp" "$SNAPSHOT"
+}
+
+if [ ! -s "$SNAPSHOT" ]; then
+    build_snapshot
+fi
+
+# shellcheck source=/dev/null
+. "$SNAPSHOT"
+
+# A snapshot left over from a removed or rebuilt tree no longer yields a usable
+# environment, so rebuild it once rather than failing.
+if ! command -v eups >/dev/null 2>&1; then
+    err "cached snapshot is unusable; rebuilding"
+    build_snapshot
+    # shellcheck source=/dev/null
+    . "$SNAPSHOT"
+fi
+
+# export -p captures variables but not shell functions, so `setup` has to be
+# redefined before any local clone can be applied.
+if [ ${#LOCALS[@]} -gt 0 ]; then
+    # shellcheck source=/dev/null
+    . "$EUPS_DIR/bin/setups.sh" || die "cannot source $EUPS_DIR/bin/setups.sh"
+    for pkg in ${LOCALS[@]+"${LOCALS[@]}"}; do
+        setup -k -r "$pkg" || die "setup -k -r $pkg failed"
+    done
+fi
+
+if [ $# -eq 0 ]; then
+    err "environment ready (no command given)"
+    exit 0
+fi
+
+exec "$@"
