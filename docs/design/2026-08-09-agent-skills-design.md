@@ -225,11 +225,19 @@ After activation and `setup -t TAG lsst_distrib`, the environment is captured wi
 
 1. Verify an activated environment, or exit with instructions.
 2. Resolve or validate the build tag through `eups`.
-3. Restore the snapshot for this environment and tag, building it first if absent or unusable.
-4. If locals were given, source `$EUPS_DIR/bin/setups.sh` to obtain the `setup` shell function, which `export -p` does not capture, then apply each `setup -k -r` in the order given.
-5. `exec` the requested command.
+3. Build the snapshot for this environment and tag if it is absent, and validate an existing one in a subshell, rebuilding it if it no longer yields a working environment.
+4. Rebuild the process environment from the snapshot alone, under `env -i`, carrying across only variables that cannot influence what EUPS resolves but that ordinary tools need: `HOME`, and where set, `USER`, `LOGNAME`, `TERM`, `TMPDIR`, `TZ`, `LANG`, the `LC_*` categories, `SSH_AUTH_SOCK`, and the proxy variables.
+5. Inside that clean shell, source `$EUPS_DIR/bin/setups.sh` to obtain the `setup` shell function, which `export -p` does not capture, then apply each `setup -k -r` in the order given.
+6. `exec` the requested command.
 
-A warm invocation costs about 0.25 s.
+Sourcing the snapshot into the current shell and exec'ing from there would not deliver the isolation the snapshot exists for.
+Sourcing can only overwrite the variables the snapshot defines; anything else the launching shell exported would survive into the command, including a stray `SETUP_*` naming a package outside `lsst_distrib`, which is exactly what EUPS reads to decide what is active.
+The command therefore runs in an environment rebuilt from the snapshot rather than layered on top of the inherited one.
+
+`TERM` is excluded from the snapshot at build time, because the snapshot is built under `env -i` with `TERM=dumb` and would otherwise force that on every command.
+The caller's real `TERM` is carried across instead.
+
+A warm invocation costs about 0.15 s.
 
 ### Command-line interface
 

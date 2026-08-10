@@ -963,6 +963,21 @@ check "lsst_distrib is set up in the snapshot" assert_contains "$OUT" "lsst_dist
 OUT=$("$LSST_RUN" -- true 2>&1)
 check "warm call does not rebuild the snapshot" \
     assert_not_contains "$OUT" "building environment"
+
+# Isolation must not over-scrub: variables a command legitimately needs, and
+# which cannot influence what EUPS resolves, have to survive.
+OUT=$(TERM=xterm-256color "$LSST_RUN" -- sh -c 'echo "term=[${TERM:-}]"' 2>&1)
+check "TERM is carried into the command" \
+    assert_contains "$OUT" "term=[xterm-256color]"
+
+OUT=$(LC_ALL=en_US.UTF-8 "$LSST_RUN" -- sh -c 'echo "lc=[${LC_ALL:-}]"' 2>&1)
+check "LC_ALL is carried into the command" \
+    assert_contains "$OUT" "lc=[en_US.UTF-8]"
+
+EMPTY_CLONE=$(mktemp -d)
+check "the no-command form still validates local clones" \
+    assert_status 1 "$LSST_RUN" -l "$EMPTY_CLONE"
+rmdir "$EMPTY_CLONE"
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -1036,7 +1051,7 @@ build_snapshot() {
         bash -c '
             source "$1" 1>&2 || exit 1
             setup -t "$2" lsst_distrib || exit 1
-            export -p | grep -Ev "^declare -x (PWD|OLDPWD|SHLVL|_)="
+            export -p | grep -Ev "^declare -x (PWD|OLDPWD|SHLVL|_|TERM)="
         ' _ "$script" "$TAG" > "$SNAPSHOT.tmp"
     then
         rm -f "$SNAPSHOT.tmp"
@@ -1049,34 +1064,68 @@ if [ ! -s "$SNAPSHOT" ]; then
     build_snapshot
 fi
 
-# shellcheck source=/dev/null
-. "$SNAPSHOT"
-
-# A snapshot left over from a removed or rebuilt tree no longer yields a usable
+# Validate in a subshell so the current environment stays untouched. A snapshot
+# left over from a removed or rebuilt tree no longer yields a usable
 # environment, so rebuild it once rather than failing.
-if ! command -v eups >/dev/null 2>&1; then
+if ! ( . "$SNAPSHOT" >/dev/null 2>&1; command -v eups >/dev/null 2>&1 ); then
     err "cached snapshot is unusable; rebuilding"
     build_snapshot
-    # shellcheck source=/dev/null
-    . "$SNAPSHOT"
 fi
 
-# export -p captures variables but not shell functions, so `setup` has to be
-# redefined before any local clone can be applied.
-if [ ${#LOCALS[@]} -gt 0 ]; then
-    # shellcheck source=/dev/null
-    . "$EUPS_DIR/bin/setups.sh" || die "cannot source $EUPS_DIR/bin/setups.sh"
-    for pkg in ${LOCALS[@]+"${LOCALS[@]}"}; do
-        setup -k -r "$pkg" || die "setup -k -r $pkg failed"
-    done
-fi
+# Rebuild the process environment from the snapshot alone rather than sourcing
+# it over the inherited one. Sourcing can only overwrite what the snapshot
+# defines, leaving anything else in place for the command: a stray SETUP_*
+# naming a package outside lsst_distrib, or an LD_LIBRARY_PATH from the
+# launching shell. Only variables unrelated to EUPS state, but which ordinary
+# tools need, are carried across.
+CLEAN_ENV=(HOME="$HOME")
+for name in USER LOGNAME TERM TMPDIR TZ LANG \
+            LC_ALL LC_CTYPE LC_COLLATE LC_NUMERIC LC_TIME LC_MESSAGES \
+            SSH_AUTH_SOCK http_proxy https_proxy no_proxy; do
+    eval "carried=\${$name+set}"
+    if [ "${carried:-}" = set ]; then
+        eval "value=\$$name"
+        # shellcheck disable=SC2154
+        CLEAN_ENV+=("$name=$value")
+    fi
+done
+
+# The command runs in a shell built from the snapshot alone, so `setup` has to
+# be redefined there: export -p captures variables but not shell functions.
+# shellcheck disable=SC2016
+INNER_SCRIPT='
+    . "$LSST_RUN_SNAPSHOT" || exit 1
+    if [ "$LSST_RUN_NLOCALS" -gt 0 ]; then
+        . "$EUPS_DIR/bin/setups.sh" || exit 1
+        n=0
+        while [ "$n" -lt "$LSST_RUN_NLOCALS" ]; do
+            setup -k -r "$1" || exit 1
+            shift
+            n=$((n + 1))
+        done
+    fi
+    unset LSST_RUN_SNAPSHOT LSST_RUN_NLOCALS
+    exec "$@"
+'
+
+# env -i clears PATH, so bash is named absolutely; the shebang already relies
+# on that path.
+RUN_CLEAN=(env -i
+    "${CLEAN_ENV[@]}"
+    LSST_RUN_SNAPSHOT="$SNAPSHOT"
+    LSST_RUN_NLOCALS="${#LOCALS[@]}"
+    /bin/bash -c "$INNER_SCRIPT" lsst-run
+    ${LOCALS[@]+"${LOCALS[@]}"})
 
 if [ $# -eq 0 ]; then
+    # Apply the clones anyway, so an unusable one is reported rather than
+    # silently accepted.
+    "${RUN_CLEAN[@]}" true || exit 1
     err "environment ready (no command given)"
     exit 0
 fi
 
-exec "$@"
+exec "${RUN_CLEAN[@]}" "$@"
 ```
 
 - [ ] **Step 5: Run the tests**
@@ -1087,7 +1136,7 @@ shellcheck skills/lsst-eups/scripts/lsst-run
 ./scripts/validate-skills
 ```
 
-Expected: `18 checks, 0 failed` with a stack active. shellcheck silent even though the `SC2034` directive was removed, because `CACHE_DIR` is now read. Validator reports `1 skill(s) validated`.
+Expected: `21 checks, 0 failed` with a stack active. shellcheck silent even though the `SC2034` directive was removed, because `CACHE_DIR` is now read. Validator reports `1 skill(s) validated`.
 
 - [ ] **Step 6: Verify local clone layering by hand**
 
