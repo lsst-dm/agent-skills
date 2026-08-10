@@ -45,6 +45,9 @@ HARDCODED_PATH_RE = re.compile(
 
 SHELL_SHEBANG_RE = re.compile(r"^#!.*\b(?:ba|da|k|z)?sh\b")
 
+# shellcheck's gcc format: path:line:col: severity: message [SCnnnn]
+SHELLCHECK_GCC_RE = re.compile(r"^(?P<path>.+?):(?P<line>\d+):(?P<col>\d+):\s*\w+:\s*(?P<message>.*)$")
+
 # Claude Code reads CLAUDE.md, Gemini CLI reads GEMINI.md, and Antigravity
 # reads GEMINI.md on top of AGENTS.md. Symlinking the aliases to one canonical
 # file keeps a single copy and removes any possibility of conflict.
@@ -115,6 +118,11 @@ def check_agent_metadata(skill_dir: Path, name: str, report) -> None:
                 )
 
 
+def annotation_escape(value: str) -> str:
+    """Escape the characters GitHub reserves inside a workflow command."""
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
 def referenced_paths(text: str) -> list[str]:
     """Return the relative paths a SKILL.md points at.
 
@@ -158,8 +166,18 @@ def check_shell(path: Path, report) -> None:
             text=True,
         )
         if result.returncode != 0:
-            for line in result.stdout.strip().splitlines():
-                report(path, f"shellcheck: {line}")
+            for text in result.stdout.strip().splitlines():
+                match = SHELLCHECK_GCC_RE.match(text)
+                if match:
+                    # Keep the position, drop the path shellcheck repeats.
+                    report(
+                        path,
+                        f"shellcheck: {match['message']}",
+                        line=int(match["line"]),
+                        col=int(match["col"]),
+                    )
+                else:
+                    report(path, f"shellcheck: {text}")
 
 
 def check_python(path: Path, report) -> None:
@@ -284,12 +302,32 @@ def main() -> int:
     skills_root = root / "skills"
     problems: list[str] = []
 
-    def report(path: Path, message: str) -> None:
+    # GitHub turns these workflow commands into inline annotations on the
+    # changed lines of a pull request. Everything is an error because the
+    # validator only reports things that fail the run.
+    #
+    # On by default under Actions, so it works without configuration. A build
+    # matrix runs this several times over the same tree, which would annotate
+    # each finding once per job, so ANNOTATE=0 silences all but one of them.
+    requested = os.environ.get("VALIDATE_SKILLS_ANNOTATE")
+    if requested is None:
+        annotate = os.environ.get("GITHUB_ACTIONS") == "true"
+    else:
+        annotate = requested not in ("", "0", "false", "no")
+
+    def report(path: Path, message: str, line: int | None = None, col: int | None = None) -> None:
         try:
             shown = path.relative_to(root)
         except ValueError:
             shown = path
         problems.append(f"{shown}: {message}")
+        if annotate:
+            location = f"file={annotation_escape(str(shown))}"
+            if line is not None:
+                location += f",line={line}"
+            if col is not None:
+                location += f",col={col}"
+            print(f"::error {location}::{annotation_escape(message)}")
 
     if not skills_root.is_dir():
         print(f"{skills_root}: no skills directory", file=sys.stderr)

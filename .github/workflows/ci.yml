@@ -33,6 +33,13 @@ jobs:
         run: python3 -m pip install --upgrade -r requirements-dev.txt
 
       - name: Validate skills
+        env:
+          # Annotate from a single job. Every leg validates the same tree, and
+          # shellcheck is only installed on Linux, so this is the leg whose
+          # findings are complete.
+          VALIDATE_SKILLS_ANNOTATE: >-
+            ${{ (runner.os == 'Linux' && matrix.python-version == '3.13')
+                && '1' || '0' }}
         run: ./scripts/validate-skills
 
       - name: Run tests
