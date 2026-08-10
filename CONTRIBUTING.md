@@ -29,7 +29,11 @@ Helper scripts are ordinary command-line programs.
 They take explicit arguments, document their dependencies, return useful exit codes, write results to stdout and diagnostics to stderr, and do not depend on any agent's internals.
 
 Shell scripts must run under bash 3.2, because that is what macOS ships.
-Avoid associative arrays, `readlink -f`, and `sort -V`.
+Avoid associative arrays, `${var,,}`, and `mapfile`, and expand possibly-empty arrays as `${arr[@]+"${arr[@]}"}`.
+
+Watch for BSD versus GNU differences in tool flags.
+`sed -i` is the one that actually breaks, since BSD requires a backup suffix argument.
+`sort -V` and `readlink -f` work on current macOS and Linux and are allowed.
 
 ## Running the checks
 

@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - **Bash 3.2 compatibility.** macOS ships `GNU bash 3.2.57`. No associative arrays (`declare -A`), no `${var,,}`, no `mapfile`. Under `set -u`, expand possibly-empty arrays as `${arr[@]+"${arr[@]}"}`.
-- **No GNU-only tool flags.** Do not use `readlink -f`, `sort -V`, or `sed -i` without a suffix. Resolve directories with `( cd "$d" && pwd -P )`. Sort build tags numerically by stripping the leading `b`.
+- **Watch BSD versus GNU tool flags.** `sed -i` needs a backup suffix argument on BSD. `sort -V` and `readlink -f` work on current macOS and Linux. Resolve directories with `( cd "$d" && pwd -P )`, which needs no flag.
 - **Hashing must degrade.** `shasum` lives in the conda environment and `sha256sum` is not universal. Try `shasum -a 256`, then `sha256sum`, then fail with a clear message.
 - **python3 standard library only.** No `pip install` is ever required. PyYAML is used when importable and a minimal parser is used otherwise.
 - **Skills must not hardcode their installed path.** That path differs per agent and per install mode.
@@ -1946,7 +1946,7 @@ Helper scripts are ordinary command-line programs.
 They take explicit arguments, document their dependencies, return useful exit codes, write results to stdout and diagnostics to stderr, and do not depend on any agent's internals.
 
 Shell scripts must run under bash 3.2, because that is what macOS ships.
-Avoid associative arrays, `readlink -f`, and `sort -V`.
+Avoid associative arrays, `${var,,}`, and `mapfile`.
 
 ## Running the checks
 
@@ -2161,7 +2161,7 @@ No associative arrays, no `${var,,}`, no `mapfile`.
 Expand possibly-empty arrays as `${arr[@]+"${arr[@]}"}`.
 
 Avoid GNU-only tool flags.
-No `readlink -f`, no `sort -V`, no bare `sed -i`.
+`sed -i` needs a backup suffix argument on BSD; `sort -V` and `readlink -f` are fine on both platforms.
 Resolve a directory with `( cd "$d" && pwd -P )`.
 
 Shell scripts must pass `shellcheck` with no warnings.

@@ -89,9 +89,11 @@ Shell scripts must run under **bash 3.2**, which is what macOS ships.
 No associative arrays, no `${var,,}`, no `mapfile`.
 Expand possibly-empty arrays as `${arr[@]+"${arr[@]}"}`.
 
-Avoid GNU-only tool flags.
-No `readlink -f`, no `sort -V`, no bare `sed -i`.
-Resolve a directory with `( cd "$d" && pwd -P )`.
+Watch for tool flags that differ between the BSD utilities macOS ships and the GNU ones on Linux.
+`sed -i` is the one that actually breaks: BSD requires a backup suffix argument, so write `sed -i.bak` and remove the backup, or use a temporary file.
+
+`sort -V` and `readlink -f` both work on current macOS and Linux, so they are allowed.
+Prefer `( cd "$d" && pwd -P )` for resolving a directory anyway, since it needs no flag at all and works on any shell.
 
 Shell scripts must pass `shellcheck` with no warnings.
 
