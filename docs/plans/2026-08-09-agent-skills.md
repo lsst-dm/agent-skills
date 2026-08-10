@@ -295,6 +295,33 @@ printf 'Invoke it as `~/.claude/skills/hardcoded/scripts/thing`.\n' >> "$DIR/SKI
 OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
 check "hardcoded agent path is reported" assert_contains "$OUT" "hardcoded install path"
 
+# Force the PyYAML-absent path so the fallback parser is genuinely exercised.
+# A directory on PYTHONPATH holding a yaml.py that raises makes `import yaml`
+# fail without touching the validator.
+SHIM=$(mktemp -d "$WORK/shim.XXXXXX")
+printf 'raise ImportError("simulated missing PyYAML")\n' > "$SHIM/yaml.py"
+
+ROOT=$(new_root); make_skill "$ROOT" fallback-ok >/dev/null
+check "fallback parser accepts a valid skill" \
+    assert_status 0 env PYTHONPATH="$SHIM" "$VALIDATE" --root "$ROOT"
+
+ROOT=$(new_root); DIR=$(make_skill "$ROOT" commented)
+perl -pi -e 's/^name: commented$/name: commented # an inline comment/' \
+    "$DIR/SKILL.md"
+check "fallback parser strips an inline comment" \
+    assert_status 0 env PYTHONPATH="$SHIM" "$VALIDATE" --root "$ROOT"
+
+ROOT=$(new_root); DIR=$(make_skill "$ROOT" comment-only)
+perl -pi -e 's/^description: .*$/description: # placeholder/' "$DIR/SKILL.md"
+OUT=$(env PYTHONPATH="$SHIM" "$VALIDATE" --root "$ROOT" 2>&1) || true
+check "fallback parser treats a comment-only value as empty" \
+    assert_contains "$OUT" 'missing a `description` field'
+
+ROOT=$(new_root); DIR=$(make_skill "$ROOT" tab-comment)
+perl -pi -e 's/^name: tab-comment$/name: tab-comment\t# note/' "$DIR/SKILL.md"
+check "fallback parser strips a tab-delimited comment" \
+    assert_status 0 env PYTHONPATH="$SHIM" "$VALIDATE" --root "$ROOT"
+
 finish
 ```
 
@@ -395,6 +422,14 @@ def parse_flat_mapping(block: str) -> tuple[dict, list[str]]:
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
+        elif value.startswith("#"):
+            value = ""
+        else:
+            # YAML starts an inline comment at a `#` preceded by whitespace,
+            # so a `#` inside a word is part of the value.
+            comment = re.search(r"\s#", value)
+            if comment:
+                value = value[: comment.start()].rstrip()
         fields[key.strip()] = value
     return fields, errors
 
@@ -568,7 +603,7 @@ chmod +x scripts/validate-skills
 bash tests/test-validate-skills.sh
 ```
 
-Expected: `12 checks, 0 failed`.
+Expected: `16 checks, 0 failed`.
 
 - [ ] **Step 6: Write the runner**
 
@@ -1815,7 +1850,7 @@ bash tests/test-validate-skills.sh
 ./tests/run-all.sh
 ```
 
-Expected: `15 checks, 0 failed` for the validator tests, and `run-all.sh` exits 0.
+Expected: `19 checks, 0 failed` for the validator tests, and `run-all.sh` exits 0.
 
 - [ ] **Step 7: Commit**
 
@@ -2051,7 +2086,7 @@ bash tests/test-validate-skills.sh
 ./tests/run-all.sh
 ```
 
-Expected: `ls -l` shows both as `-> AGENTS.md`. Validator tests report `19 checks, 0 failed`, and `run-all.sh` exits 0.
+Expected: `ls -l` shows both as `-> AGENTS.md`. Validator tests report `23 checks, 0 failed`, and `run-all.sh` exits 0.
 
 - [ ] **Step 7: Confirm git stores them as symlinks, not copies**
 
