@@ -75,6 +75,10 @@ OUT=$(SETUP_FAKE_MARKER=leaked "$LSST_RUN" -- \
 check "launching shell setup vars do not leak" \
     assert_contains "$OUT" "marker=[]"
 
+OUT=$(TERM=xterm-256color "$LSST_RUN" -- sh -c 'echo "term=[${TERM:-}]"' 2>&1)
+check "TERM is carried into the command" \
+    assert_contains "$OUT" "term=[xterm-256color]"
+
 OUT=$("$LSST_RUN" -- sh -c 'echo "tag=$SETUP_LSST_DISTRIB"' 2>&1)
 check "lsst_distrib is set up in the snapshot" assert_contains "$OUT" "lsst_distrib"
 

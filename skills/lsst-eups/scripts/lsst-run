@@ -166,7 +166,7 @@ build_snapshot() {
         bash -c '
             source "$1" 1>&2 || exit 1
             setup -t "$2" lsst_distrib || exit 1
-            export -p | grep -Ev "^declare -x (PWD|OLDPWD|SHLVL|_)="
+            export -p | grep -Ev "^declare -x (PWD|OLDPWD|SHLVL|_|TERM)="
         ' _ "$script" "$TAG" > "$SNAPSHOT.tmp"
     then
         rm -f "$SNAPSHOT.tmp"
@@ -179,26 +179,13 @@ if [ ! -s "$SNAPSHOT" ]; then
     build_snapshot
 fi
 
+# Validate in a subshell so the current environment stays untouched. A
+# snapshot left over from a removed or rebuilt tree no longer yields a
+# usable environment, so rebuild it once rather than failing.
 # shellcheck source=/dev/null
-. "$SNAPSHOT"
-
-# A snapshot left over from a removed or rebuilt tree no longer yields a usable
-# environment, so rebuild it once rather than failing.
-if ! command -v eups >/dev/null 2>&1; then
+if ! ( . "$SNAPSHOT" >/dev/null 2>&1; command -v eups >/dev/null 2>&1 ); then
     err "cached snapshot is unusable; rebuilding"
     build_snapshot
-    # shellcheck source=/dev/null
-    . "$SNAPSHOT"
-fi
-
-# export -p captures variables but not shell functions, so `setup` has to be
-# redefined before any local clone can be applied.
-if [ ${#LOCALS[@]} -gt 0 ]; then
-    # shellcheck source=/dev/null
-    . "$EUPS_DIR/bin/setups.sh" || die "cannot source $EUPS_DIR/bin/setups.sh"
-    for pkg in ${LOCALS[@]+"${LOCALS[@]}"}; do
-        setup -k -r "$pkg" || die "setup -k -r $pkg failed"
-    done
 fi
 
 if [ $# -eq 0 ]; then
@@ -206,4 +193,42 @@ if [ $# -eq 0 ]; then
     exit 0
 fi
 
-exec "$@"
+# Rebuild the process environment from the snapshot alone rather than
+# sourcing it over the inherited one. Sourcing can only overwrite what the
+# snapshot defines, leaving anything else in place for the command: a stray
+# SETUP_* naming a package outside lsst_distrib, or an LD_LIBRARY_PATH from
+# the launching shell. Only variables unrelated to EUPS state, but which
+# ordinary tools need, are carried across.
+CLEAN_ENV=(HOME="$HOME")
+for name in USER LOGNAME TERM TMPDIR TZ LANG SSH_AUTH_SOCK \
+            http_proxy https_proxy no_proxy; do
+    eval "carried=\${$name+set}"
+    if [ "${carried:-}" = set ]; then
+        # Bash 3.2 has no namerefs, so indirect expansion goes through eval.
+        eval "value=\$$name"
+        # shellcheck disable=SC2154  # value is assigned above via eval
+        CLEAN_ENV+=("$name=$value")
+    fi
+done
+
+# export -p captures variables but not shell functions, so `setup` has to be
+# redefined inside the clean shell before any local clone can be applied.
+# shellcheck disable=SC2016
+exec env -i \
+    "${CLEAN_ENV[@]}" \
+    LSST_RUN_SNAPSHOT="$SNAPSHOT" \
+    LSST_RUN_NLOCALS="${#LOCALS[@]}" \
+    /bin/bash -c '
+        . "$LSST_RUN_SNAPSHOT" || exit 1
+        if [ "$LSST_RUN_NLOCALS" -gt 0 ]; then
+            . "$EUPS_DIR/bin/setups.sh" || exit 1
+            n=0
+            while [ "$n" -lt "$LSST_RUN_NLOCALS" ]; do
+                setup -k -r "$1" || exit 1
+                shift
+                n=$((n + 1))
+            done
+        fi
+        unset LSST_RUN_SNAPSHOT LSST_RUN_NLOCALS
+        exec "$@"
+    ' _ ${LOCALS[@]+"${LOCALS[@]}"} "$@"
