@@ -143,4 +143,17 @@ perl -pi -e 's/^name: tab-comment$/name: tab-comment\t# note/' "$DIR/SKILL.md"
 check "fallback parser strips a tab-delimited comment" \
     assert_status 0 env PYTHONPATH="$SHIM" "$VALIDATE" --root "$ROOT"
 
+# The README skills table must list exactly the skills that exist.
+ROOT=$(new_root); make_skill "$ROOT" listed >/dev/null
+check "listed skill passes" assert_status 0 "$VALIDATE" --root "$ROOT"
+
+perl -ni -e 'print unless /`listed`/' "$ROOT/README.md"
+OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
+check "unlisted skill is reported" assert_contains "$OUT" "not listed in README"
+
+ROOT=$(new_root); make_skill "$ROOT" listed >/dev/null
+printf '| `ghost` | nonexistent |\n' >> "$ROOT/README.md"
+OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
+check "README naming a missing skill is reported" assert_contains "$OUT" "ghost"
+
 finish

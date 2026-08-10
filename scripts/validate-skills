@@ -213,6 +213,21 @@ def validate_skill(skill_dir: Path, report) -> None:
                 check_python(path, report)
 
 
+def check_readme(root: Path, skill_names: list[str], report) -> None:
+    """The README skills table must name exactly the skills that exist."""
+    readme = root / "README.md"
+    if not readme.is_file():
+        report(readme, "no README.md")
+        return
+    text = readme.read_text(encoding="utf-8")
+    listed = set(re.findall(r"^\|\s*`([a-z0-9-]+)`\s*\|", text, re.MULTILINE))
+    for name in skill_names:
+        if name not in listed:
+            report(readme, f"skill `{name}` is not listed in README.md")
+    for name in sorted(listed - set(skill_names)):
+        report(readme, f"README.md lists `{name}`, which is not in skills/")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -240,6 +255,8 @@ def main() -> int:
     skill_dirs = sorted(p for p in skills_root.iterdir() if p.is_dir())
     for skill_dir in skill_dirs:
         validate_skill(skill_dir, report)
+
+    check_readme(root, [p.name for p in skill_dirs], report)
 
     for problem in problems:
         print(problem, file=sys.stderr)
