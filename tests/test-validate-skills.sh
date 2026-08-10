@@ -156,4 +156,20 @@ printf '| `ghost` | nonexistent |\n' >> "$ROOT/README.md"
 OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
 check "README naming a missing skill is reported" assert_contains "$OUT" "ghost"
 
+# The agent guidance aliases must be symlinks to the canonical AGENTS.md.
+ROOT=$(new_root); make_skill "$ROOT" guided >/dev/null
+check "symlinked aliases pass" assert_status 0 "$VALIDATE" --root "$ROOT"
+
+rm "$ROOT/GEMINI.md"
+OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
+check "missing alias is reported" assert_contains "$OUT" "GEMINI.md"
+
+printf 'a divergent copy\n' > "$ROOT/GEMINI.md"
+OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
+check "copied alias is reported" assert_contains "$OUT" "not a copy"
+
+rm -f "$ROOT/AGENTS.md"
+OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
+check "missing AGENTS.md is reported" assert_contains "$OUT" "AGENTS.md"
+
 finish

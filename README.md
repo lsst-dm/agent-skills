@@ -104,6 +104,13 @@ Forking a skill per agent is a last resort.
 
 Agent-specific metadata that other agents ignore, such as `agents/openai.yaml` for Codex, may live in the canonical skill directory because it is additive.
 
+## Guidance for agents
+
+[AGENTS.md](AGENTS.md) carries the instructions an agent needs when adding or editing a skill here.
+
+`CLAUDE.md` and `GEMINI.md` are symlinks to it, so Claude Code, Codex, Gemini CLI, and Antigravity all read the same guidance from one file.
+Edit `AGENTS.md`; the validator rejects an alias that has been replaced by a copy.
+
 ## Security
 
 A skill is executable instruction, and anything under `scripts/` is executable code that your agent may run with your privileges.
