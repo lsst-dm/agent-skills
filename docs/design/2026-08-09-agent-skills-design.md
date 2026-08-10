@@ -281,7 +281,12 @@ Relative paths are resolved to absolute.
 Tests requiring a real stack skip themselves cleanly when no LSST environment is activated, so CI without a stack still passes.
 
 Manual verification covers the `envconfig` branch against the existing lsstsw tree.
-The `loadLSST.sh` branch has no lsstinstall tree available to test against yet, so it remains verified only by inspection; exercising it against a real lsstinstall installation is still outstanding.
+The `loadLSST.sh` branch has been exercised against the shared installation at the SLAC data facility.
+That stack sets no `LSSTSW`, so the tree root was derived three levels up from `CONDA_PREFIX`, and the snapshot built and ran a package's tests successfully.
+The same run confirmed weekly tag selection, choosing `w_2026_32` over the older weeklies and the seventeen dailies the stack also carries.
+
+Activating a read-only shared installation prints a `mkdir: cannot create directory ... /.cargo: Permission denied` warning, because the conda environment's own `activate.d` hook defaults `CARGO_HOME` to a directory inside the prefix.
+It comes from the stack, not from this wrapper, and it does not affect the resulting environment.
 
 ## Documentation
 
