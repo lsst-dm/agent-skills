@@ -79,6 +79,15 @@ OUT=$(TERM=xterm-256color "$LSST_RUN" -- sh -c 'echo "term=[${TERM:-}]"' 2>&1)
 check "TERM is carried into the command" \
     assert_contains "$OUT" "term=[xterm-256color]"
 
+OUT=$(LC_ALL=en_US.UTF-8 "$LSST_RUN" -- sh -c 'echo "lc=[${LC_ALL:-}]"' 2>&1)
+check "LC_ALL is carried into the command" \
+    assert_contains "$OUT" "lc=[en_US.UTF-8]"
+
+EMPTY_CLONE=$(mktemp -d)
+check "the no-command form still validates local clones" \
+    assert_status 1 "$LSST_RUN" -l "$EMPTY_CLONE"
+rmdir "$EMPTY_CLONE"
+
 OUT=$("$LSST_RUN" -- sh -c 'echo "tag=$SETUP_LSST_DISTRIB"' 2>&1)
 check "lsst_distrib is set up in the snapshot" assert_contains "$OUT" "lsst_distrib"
 

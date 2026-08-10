@@ -188,11 +188,6 @@ if ! ( . "$SNAPSHOT" >/dev/null 2>&1; command -v eups >/dev/null 2>&1 ); then
     build_snapshot
 fi
 
-if [ $# -eq 0 ]; then
-    err "environment ready (no command given)"
-    exit 0
-fi
-
 # Rebuild the process environment from the snapshot alone rather than
 # sourcing it over the inherited one. Sourcing can only overwrite what the
 # snapshot defines, leaving anything else in place for the command: a stray
@@ -200,8 +195,9 @@ fi
 # the launching shell. Only variables unrelated to EUPS state, but which
 # ordinary tools need, are carried across.
 CLEAN_ENV=(HOME="$HOME")
-for name in USER LOGNAME TERM TMPDIR TZ LANG SSH_AUTH_SOCK \
-            http_proxy https_proxy no_proxy; do
+for name in USER LOGNAME TERM TMPDIR TZ LANG \
+            LC_ALL LC_CTYPE LC_COLLATE LC_NUMERIC LC_TIME LC_MESSAGES \
+            SSH_AUTH_SOCK http_proxy https_proxy no_proxy; do
     eval "carried=\${$name+set}"
     if [ "${carried:-}" = set ]; then
         # Bash 3.2 has no namerefs, so indirect expansion goes through eval.
@@ -211,24 +207,37 @@ for name in USER LOGNAME TERM TMPDIR TZ LANG SSH_AUTH_SOCK \
     fi
 done
 
-# export -p captures variables but not shell functions, so `setup` has to be
-# redefined inside the clean shell before any local clone can be applied.
+# The command runs in a shell built from the snapshot alone, so `setup` has to
+# be redefined there: export -p captures variables but not shell functions.
 # shellcheck disable=SC2016
-exec env -i \
-    "${CLEAN_ENV[@]}" \
-    LSST_RUN_SNAPSHOT="$SNAPSHOT" \
-    LSST_RUN_NLOCALS="${#LOCALS[@]}" \
-    /bin/bash -c '
-        . "$LSST_RUN_SNAPSHOT" || exit 1
-        if [ "$LSST_RUN_NLOCALS" -gt 0 ]; then
-            . "$EUPS_DIR/bin/setups.sh" || exit 1
-            n=0
-            while [ "$n" -lt "$LSST_RUN_NLOCALS" ]; do
-                setup -k -r "$1" || exit 1
-                shift
-                n=$((n + 1))
-            done
-        fi
-        unset LSST_RUN_SNAPSHOT LSST_RUN_NLOCALS
-        exec "$@"
-    ' _ ${LOCALS[@]+"${LOCALS[@]}"} "$@"
+INNER_SCRIPT='
+    . "$LSST_RUN_SNAPSHOT" || exit 1
+    if [ "$LSST_RUN_NLOCALS" -gt 0 ]; then
+        . "$EUPS_DIR/bin/setups.sh" || exit 1
+        n=0
+        while [ "$n" -lt "$LSST_RUN_NLOCALS" ]; do
+            setup -k -r "$1" || exit 1
+            shift
+            n=$((n + 1))
+        done
+    fi
+    unset LSST_RUN_SNAPSHOT LSST_RUN_NLOCALS
+    exec "$@"
+'
+
+RUN_CLEAN=(env -i
+    "${CLEAN_ENV[@]}"
+    LSST_RUN_SNAPSHOT="$SNAPSHOT"
+    LSST_RUN_NLOCALS="${#LOCALS[@]}"
+    /bin/bash -c "$INNER_SCRIPT" lsst-run
+    ${LOCALS[@]+"${LOCALS[@]}"})
+
+if [ $# -eq 0 ]; then
+    # Apply the clones anyway, so an unusable one is reported rather than
+    # silently accepted.
+    "${RUN_CLEAN[@]}" true || exit 1
+    err "environment ready (no command given)"
+    exit 0
+fi
+
+exec "${RUN_CLEAN[@]}" "$@"
