@@ -1,0 +1,3 @@
+# Dependencies for this repository's own tooling, not for any skill.
+# scripts/validate-skills parses skill frontmatter and per-agent metadata.
+PyYAML

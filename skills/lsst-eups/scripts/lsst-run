@@ -1,0 +1,336 @@
+#!/bin/bash
+#
+# lsst-run: run a command inside the LSST Science Pipelines EUPS environment.
+#
+# Usage: lsst-run [-t TAG] [-l PATH]... [--list-tags] [--] COMMAND [ARGS...]
+#
+#   -t TAG       EUPS build tag for lsst_distrib (e.g. b8411). Defaults to the
+#                highest bNNNN tag currently carried by lsst_distrib.
+#   -l PATH      Local package clone to `setup -k -r PATH`. Repeatable and
+#                applied in order, so list dependencies before the package
+#                being worked on. Relative paths are resolved to absolute.
+#   --list-tags  Print the build tags available for lsst_distrib and exit.
+#
+# The LSST environment must already be active in the shell that started the
+# agent, established by either of:
+#
+#     source "$LSSTSW/bin/envconfig"     # lsstsw checkout
+#     source <stack>/loadLSST.bash       # lsstinstall tree
+#
+# lsst-run does not run the command in that inherited environment. It builds a
+# pristine environment holding lsst_distrib at the chosen tag and nothing else,
+# caches it under ~/.cache/lsst-run, and applies any -l clones on top per call.
+# The isolation keeps a local `setup` in the launching shell from silently
+# changing what the command sees; the cache keeps repeat calls fast.
+
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/lsst-run"
+
+err() { echo "lsst-run: $*" >&2; }
+die() { err "$*"; exit 1; }
+
+# Tag families that name a fixed point in a stack's history, most preferred
+# first. An lsstsw stack numbers its own builds bNNNN. An lsstinstall stack,
+# such as a shared site installation, carries the permanent weekly tags
+# instead, and release installations carry vNN_N_N. Daily tags are dated and
+# so are also fixed, but they make the least useful default.
+#
+# Movable tags such as `current` are deliberately absent. The environment
+# snapshot is keyed on the tag, so a tag that moves would pin a user to a
+# stale build indefinitely.
+TAG_FAMILIES="b w v d"
+
+tag_family_pattern() {
+    case "$1" in
+        b) printf '%s\n' '^b[0-9]+$' ;;
+        w) printf '%s\n' '^w_[0-9]+_[0-9]+$' ;;
+        v) printf '%s\n' '^v[0-9][0-9_]*$' ;;
+        d) printf '%s\n' '^d_[0-9]+_[0-9]+_[0-9]+$' ;;
+        *) return 1 ;;
+    esac
+}
+
+is_fixed_tag() {
+    local family
+    for family in $TAG_FAMILIES; do
+        if printf '%s\n' "$1" |
+                grep -qE "$(tag_family_pattern "$family")"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+TAG=""
+LOCALS=()
+LIST_TAGS=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -t)
+            [ $# -ge 2 ] || die "-t requires a tag argument"
+            is_fixed_tag "$2" || die \
+                "-t needs a fixed tag (bNNNN, w_YYYY_WW, vNN_N_N or d_YYYY_MM_DD), not $2"
+            TAG="$2"
+            shift 2
+            ;;
+        -l)
+            [ $# -ge 2 ] || die "-l requires a path argument"
+            if [ ! -e "$2" ]; then
+                die "-l path not found: $2"
+            elif [ ! -d "$2" ]; then
+                die "-l path is not a directory: $2"
+            fi
+            dir=$( cd "$2" 2>/dev/null && pwd -P ) || \
+                die "-l path cannot be entered, check its execute permission: $2"
+            LOCALS+=("$dir"); shift 2 ;;
+        --list-tags)
+            LIST_TAGS=1
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            die "unknown option: $1"
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+# The wrapper deliberately refuses to guess where the stack is. Both supported
+# activation paths export these three variables, so their absence means no
+# environment was activated before the agent started.
+if [ -z "${EUPS_PATH:-}" ] || [ -z "${EUPS_DIR:-}" ] || \
+   [ -z "${LSST_CONDA_ENV_NAME:-}" ]; then
+    err "no active LSST environment"
+    err "activate the stack in the shell that starts the agent, then restart it:"
+    err "    source \"\$LSSTSW/bin/envconfig\"   # lsstsw checkout"
+    err "    source <stack>/loadLSST.bash      # lsstinstall tree"
+    exit 1
+fi
+
+# Every tag lsst_distrib carries. A version can carry several colon-separated
+# tags in any order, so split them apart rather than trusting position.
+all_tags() {
+    eups list lsst_distrib --raw 2>/dev/null |
+        awk -F'|' '{print $3}' |
+        tr ':' '\n' |
+        sort -u
+}
+
+# The fixed tags of one family, oldest first. sort -V compares digit runs
+# numerically, so it orders b9 before b10000 and w_2026_5 before w_2026_10,
+# where a lexical sort would get both wrong.
+tags_of_family() {
+    local pattern
+    pattern=$(tag_family_pattern "$1") || return 1
+    all_tags | grep -E "$pattern" | sort -V
+}
+
+# Every fixed tag, grouped by family, most preferred family first.
+usable_tags() {
+    local family
+    for family in $TAG_FAMILIES; do
+        tags_of_family "$family"
+    done
+}
+
+# The default: the newest tag of the most preferred family this stack has.
+# Preferring by family rather than mixing them keeps an lsstsw stack on its
+# own build numbers even though it also carries dailies.
+latest_tag() {
+    local family newest
+    for family in $TAG_FAMILIES; do
+        newest=$(tags_of_family "$family" | tail -1)
+        if [ -n "$newest" ]; then
+            printf '%s\n' "$newest"
+            return 0
+        fi
+    done
+    return 1
+}
+
+if [ "$LIST_TAGS" = 1 ]; then
+    usable_tags
+    exit 0
+fi
+
+if [ -n "$TAG" ]; then
+    if ! eups list -t "$TAG" lsst_distrib >/dev/null 2>&1; then
+        err "lsst_distrib has no tag $TAG; usable tags are:"
+        usable_tags >&2
+        exit 1
+    fi
+else
+    TAG=$(latest_tag) || die \
+        "lsst_distrib carries no build, weekly, release or daily tag"
+fi
+err "using lsst_distrib tag $TAG"
+
+# shasum lives in the conda environment and sha256sum is not universal, so try
+# both before giving up.
+hash_of() {
+    if command -v shasum >/dev/null 2>&1; then
+        printf '%s\n' "$@" | shasum -a 256 | cut -c1-16
+    elif command -v sha256sum >/dev/null 2>&1; then
+        printf '%s\n' "$@" | sha256sum | cut -c1-16
+    else
+        die "neither shasum nor sha256sum is available"
+    fi
+}
+
+# The script that activates this environment from scratch. lsstsw checkouts
+# provide bin/envconfig at $LSSTSW; lsstinstall trees provide loadLSST.sh at the
+# root of the tree, which is three levels above the conda environment prefix.
+activation_script() {
+    local root candidate
+    if [ -n "${LSSTSW:-}" ] && [ -f "$LSSTSW/bin/envconfig" ]; then
+        printf '%s\n' "$LSSTSW/bin/envconfig"
+        return 0
+    fi
+    [ -n "${CONDA_PREFIX:-}" ] || return 1
+    root=$( cd "$CONDA_PREFIX/../../.." 2>/dev/null && pwd -P ) || return 1
+    for candidate in "$root/loadLSST.sh" "$root/loadLSST.bash" \
+                     "$root/bin/envconfig"; do
+        if [ -f "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+SNAPSHOT="$CACHE_DIR/env-$(hash_of "$LSST_CONDA_ENV_NAME" "$EUPS_PATH" "$TAG").sh"
+
+build_snapshot() {
+    local script tmp
+    script=$(activation_script) || die \
+        "cannot locate envconfig or loadLSST.sh for $LSST_CONDA_ENV_NAME"
+    err "building environment snapshot for tag $TAG (this takes a few seconds)..."
+    mkdir -p "$CACHE_DIR" || die "cannot create cache directory $CACHE_DIR"
+
+    # A private temporary file per build, so two cold builds racing for the
+    # same tag cannot write over each other's partial output. The final mv is
+    # atomic within the cache directory, so whichever finishes last wins and
+    # readers never see a half-written snapshot.
+    tmp=$(mktemp "$CACHE_DIR/env-build-XXXXXX") || \
+        die "cannot create a temporary file in $CACHE_DIR"
+
+    # env -i drops everything the launching shell had set up, so the snapshot
+    # holds lsst_distrib and nothing else. LSST_CONDA_ENV_NAME is passed
+    # through because both activation scripts honour it as an input and it
+    # selects the same conda environment the user activated.
+    # shellcheck disable=SC2016  # $1/$2 below are for the nested bash -c, not this shell
+    if ! env -i \
+        HOME="$HOME" \
+        USER="${USER:-}" \
+        TERM="${TERM:-dumb}" \
+        PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+        LSST_CONDA_ENV_NAME="$LSST_CONDA_ENV_NAME" \
+        ${LSSTSW:+LSSTSW="$LSSTSW"} \
+        bash -c '
+            source "$1" 1>&2 || exit 1
+            setup -t "$2" lsst_distrib || exit 1
+            export -p | grep -Ev "^declare -x (PWD|OLDPWD|SHLVL|_|TERM)="
+        ' _ "$script" "$TAG" > "$tmp"
+    then
+        rm -f "$tmp"
+        err "failed to build the environment snapshot for tag $TAG"
+        err "$TAG was accepted by the active environment, whose EUPS_PATH is:"
+        err "    $EUPS_PATH"
+        err "but the rebuilt environment comes from $script, which may search"
+        err "a different tree. A tag from a personal stack layered onto a"
+        err "shared one will fail here."
+        exit 1
+    fi
+    if ! mv "$tmp" "$SNAPSHOT"; then
+        rm -f "$tmp"
+        die "cannot write the environment snapshot to $SNAPSHOT"
+    fi
+}
+
+if [ ! -s "$SNAPSHOT" ]; then
+    build_snapshot
+fi
+
+# Validate in a subshell so the current environment stays untouched. A
+# snapshot left over from a removed or rebuilt tree no longer yields a
+# usable environment, so rebuild it once rather than failing.
+# shellcheck source=/dev/null
+if ! ( . "$SNAPSHOT" >/dev/null 2>&1; command -v eups >/dev/null 2>&1 ); then
+    err "cached snapshot is unusable; rebuilding"
+    build_snapshot
+fi
+
+# Tags were resolved against the active environment, but the command runs in
+# the rebuilt one. Those search the same tree in every ordinary setup; where
+# they differ, say so, because the tag that was chosen may not mean there what
+# it meant here.
+snapshot_eups_path=$(
+    sed -n 's/^declare -x EUPS_PATH="\(.*\)"$/\1/p' "$SNAPSHOT" | head -1
+)
+if [ -n "$snapshot_eups_path" ] && [ "$snapshot_eups_path" != "$EUPS_PATH" ]; then
+    err "note: tags were resolved against EUPS_PATH=$EUPS_PATH"
+    err "      but the command runs with EUPS_PATH=$snapshot_eups_path"
+fi
+
+# Rebuild the process environment from the snapshot alone rather than
+# sourcing it over the inherited one. Sourcing can only overwrite what the
+# snapshot defines, leaving anything else in place for the command: a stray
+# SETUP_* naming a package outside lsst_distrib, or an LD_LIBRARY_PATH from
+# the launching shell. Only variables unrelated to EUPS state, but which
+# ordinary tools need, are carried across.
+CLEAN_ENV=(HOME="$HOME")
+for name in USER LOGNAME TERM TMPDIR TZ LANG \
+            LC_ALL LC_CTYPE LC_COLLATE LC_MESSAGES LC_MONETARY \
+            LC_NUMERIC LC_TIME \
+            SSH_AUTH_SOCK http_proxy https_proxy no_proxy; do
+    eval "carried=\${$name+set}"
+    if [ "${carried:-}" = set ]; then
+        # Bash 3.2 has no namerefs, so indirect expansion goes through eval.
+        eval "value=\$$name"
+        # shellcheck disable=SC2154  # value is assigned above via eval
+        CLEAN_ENV+=("$name=$value")
+    fi
+done
+
+# The command runs in a shell built from the snapshot alone, so `setup` has to
+# be redefined there: export -p captures variables but not shell functions.
+# shellcheck disable=SC2016
+INNER_SCRIPT='
+    . "$LSST_RUN_SNAPSHOT" || exit 1
+    if [ "$LSST_RUN_NLOCALS" -gt 0 ]; then
+        . "$EUPS_DIR/bin/setups.sh" || exit 1
+        n=0
+        while [ "$n" -lt "$LSST_RUN_NLOCALS" ]; do
+            setup -k -r "$1" || exit 1
+            shift
+            n=$((n + 1))
+        done
+    fi
+    unset LSST_RUN_SNAPSHOT LSST_RUN_NLOCALS
+    exec "$@"
+'
+
+RUN_CLEAN=(env -i
+    "${CLEAN_ENV[@]}"
+    LSST_RUN_SNAPSHOT="$SNAPSHOT"
+    LSST_RUN_NLOCALS="${#LOCALS[@]}"
+    /bin/bash -c "$INNER_SCRIPT" lsst-run
+    ${LOCALS[@]+"${LOCALS[@]}"})
+
+if [ $# -eq 0 ]; then
+    # Apply any clones anyway, so an unusable one is reported rather than
+    # silently accepted. With none to apply there is nothing left to check,
+    # the snapshot having already been validated above.
+    if [ ${#LOCALS[@]} -gt 0 ]; then
+        "${RUN_CLEAN[@]}" true || exit 1
+    fi
+    err "environment ready (no command given)"
+    exit 0
+fi
+
+exec "${RUN_CLEAN[@]}" "$@"

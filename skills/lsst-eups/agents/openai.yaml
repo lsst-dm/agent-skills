@@ -1,0 +1,4 @@
+interface:
+  display_name: "LSST EUPS"
+  short_description: "Run LSST Pipelines in the EUPS stack"
+  default_prompt: "Use $lsst-eups to run this task in the LSST Science Pipelines EUPS environment."

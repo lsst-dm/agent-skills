@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.13", "3.14"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install shellcheck
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Install development dependencies
+        run: python3 -m pip install --upgrade -r requirements-dev.txt
+
+      - name: Validate skills
+        env:
+          # Annotate from a single job. Every leg validates the same tree, and
+          # shellcheck is only installed on Linux, so this is the leg whose
+          # findings are complete.
+          VALIDATE_SKILLS_ANNOTATE: >-
+            ${{ (runner.os == 'Linux' && matrix.python-version == '3.13')
+                && '1' || '0' }}
+        run: ./scripts/validate-skills
+
+      - name: Run tests
+        run: ./tests/run-all.sh
+
+      - name: Run tests under the bash 3.2 floor
+        if: runner.os == 'macOS'
+        run: BASH_BIN=/bin/bash ./tests/run-all.sh
