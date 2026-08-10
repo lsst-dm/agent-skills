@@ -115,6 +115,22 @@ printf 'Invoke it as `~/.claude/skills/hardcoded/scripts/thing`.\n' >> "$DIR/SKI
 OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
 check "hardcoded agent path is reported" assert_contains "$OUT" "hardcoded install path"
 
+# The braced ${HOME} spelling is caught too.
+ROOT=$(new_root); DIR=$(make_skill "$ROOT" hardcoded-braced)
+printf 'Invoke it as `${HOME}/.codex/skills/hardcoded-braced/scripts/thing`.\n' \
+    >> "$DIR/SKILL.md"
+OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
+check "braced HOME agent path is reported" \
+    assert_contains "$OUT" "hardcoded install path"
+
+# An absolute home directory spelled out in full is caught too.
+ROOT=$(new_root); DIR=$(make_skill "$ROOT" hardcoded-absolute)
+printf 'Invoke it as `/Users/someone/.claude/skills/hardcoded-absolute/scripts/thing`.\n' \
+    >> "$DIR/SKILL.md"
+OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
+check "absolute agent path is reported" \
+    assert_contains "$OUT" "hardcoded install path"
+
 # Force the PyYAML-absent path so the fallback parser is genuinely exercised.
 SHIM=$(mktemp -d "$WORK/shim.XXXXXX")
 printf 'raise ImportError("simulated missing PyYAML")\n' > "$SHIM/yaml.py"

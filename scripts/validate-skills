@@ -25,9 +25,12 @@ LINK_RE = re.compile(r"\[[^\]]*\]\((?!https?://|mailto:|#)([^)]+)\)")
 CODE_PATH_RE = re.compile(r"`((?:scripts|references|assets)/[^`\s]+)`")
 
 # Agent discovery locations. A skill that names one of these has baked in an
-# install path that differs per agent and per install mode.
+# install path that differs per agent and per install mode. The home
+# directory may be spelled as ~, $HOME, ${HOME}, or written out absolutely
+# (e.g. /Users/someone), so all four forms are covered.
 HARDCODED_PATH_RE = re.compile(
-    r"(?:~|\$HOME)/\.(?:claude|codex|agents|gemini)/[A-Za-z0-9_./-]*skills"
+    r"(?:~|\$HOME|\$\{HOME\}|/[A-Za-z0-9_./-]+)"
+    r"/\.(?:claude|codex|agents|gemini)/[A-Za-z0-9_./-]*skills"
 )
 
 SHELL_SHEBANG_RE = re.compile(r"^#!.*\b(?:ba|da|k|z)?sh\b")
