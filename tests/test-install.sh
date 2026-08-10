@@ -218,6 +218,24 @@ run_install "$HOME_DIR" --uninstall >/dev/null
 check "uninstall spares a foreign directory" \
     grep -q precious "$HOME_DIR/.claude/skills/lsst-eups/SKILL.md"
 
+# A backup left by --force is not removed by --uninstall, so its location has
+# to be reported rather than left for the user to stumble on.
+HOME_DIR=$(fresh_home .claude)
+mkdir -p "$HOME_DIR/.claude/skills/lsst-eups"
+printf 'precious\n' > "$HOME_DIR/.claude/skills/lsst-eups/SKILL.md"
+run_install "$HOME_DIR" --force >/dev/null
+OUT=$(run_install "$HOME_DIR" --uninstall)
+check "uninstall reports a remaining backup" assert_contains "$OUT" ".bak"
+check "the backup itself survives uninstall" \
+    grep -q precious "$HOME_DIR/.claude/skills/lsst-eups.bak/SKILL.md"
+
+# With no backup present there is nothing to mention.
+HOME_DIR=$(fresh_home .claude)
+run_install "$HOME_DIR" >/dev/null
+OUT=$(run_install "$HOME_DIR" --uninstall)
+check "uninstall stays quiet when no backup exists" \
+    assert_not_contains "$OUT" ".bak"
+
 # A refused uninstall reports failure.
 HOME_DIR=$(fresh_home .claude)
 mkdir -p "$HOME_DIR/.claude/skills/lsst-eups"

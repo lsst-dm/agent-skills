@@ -100,4 +100,32 @@ OUT=$("$LSST_RUN" -- true 2>&1)
 check "warm call does not rebuild the snapshot" \
     assert_not_contains "$OUT" "building environment"
 
+# Cold builds racing for the same tag must not corrupt each other. Each writes
+# to its own temporary file and renames it into place, so every caller either
+# succeeds or fails cleanly, and no partial file is left behind.
+rm -f "$CACHE_DIR"/env-*.sh
+for _ in 1 2 3; do
+    "$LSST_RUN" -- true >/dev/null 2>&1 &
+done
+wait
+check "concurrent cold builds all succeed" \
+    "$LSST_RUN" -- true
+check "concurrent cold builds leave no partial file" \
+    bash -c '! ls "$1"/env-build-* >/dev/null 2>&1' _ "$CACHE_DIR"
+check "the snapshot is usable after a race" \
+    "$LSST_RUN" -- sh -c 'command -v eups >/dev/null'
+
+# A cache directory that cannot be written to must say so precisely, rather
+# than blaming the environment build that actually succeeded.
+RO_CACHE=$(mktemp -d)
+mkdir -p "$RO_CACHE/lsst-run"
+chmod 555 "$RO_CACHE/lsst-run"
+OUT=$(XDG_CACHE_HOME="$RO_CACHE" "$LSST_RUN" -- true 2>&1)
+check "an unwritable cache is reported as such" \
+    assert_contains "$OUT" "temporary file"
+check "an unwritable cache fails non-zero" \
+    assert_status 1 env XDG_CACHE_HOME="$RO_CACHE" "$LSST_RUN" -- true
+chmod 755 "$RO_CACHE/lsst-run"
+rm -rf "$RO_CACHE"
+
 finish

@@ -113,6 +113,15 @@ other_target_dir() {
 
 resolve_dir() { ( cd "$1" 2>/dev/null && pwd -P ); }
 
+# A backup left by an earlier --force is never removed automatically, so say
+# where it is rather than leaving it to be discovered by accident.
+report_backup() {
+    local entry=$1
+    if [ -e "$entry.bak" ] || [ -L "$entry.bak" ]; then
+        echo "note: an earlier backup remains at $entry.bak"
+    fi
+}
+
 # True when target is a symlink into this repository, or a copy this
 # installer made. Copies record their origin because comparing content
 # stops matching as soon as the repository changes, which would make our
@@ -191,6 +200,7 @@ for agent in ${AGENTS[@]+"${AGENTS[@]}"}; do
                         rm -rf "$other_target"
                         echo "removed $other_target"
                     fi
+                    report_backup "$other_target"
                 else
                     err "not installed from this repository, leaving alone: $other_target"
                     exit_status=1
@@ -207,6 +217,7 @@ for agent in ${AGENTS[@]+"${AGENTS[@]}"}; do
                     rm -rf "$target"
                     echo "removed $target"
                 fi
+                report_backup "$target"
             else
                 err "not installed from this repository, leaving alone: $target"
                 exit_status=1

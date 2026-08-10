@@ -149,11 +149,18 @@ activation_script() {
 SNAPSHOT="$CACHE_DIR/env-$(hash_of "$LSST_CONDA_ENV_NAME" "$EUPS_PATH" "$TAG").sh"
 
 build_snapshot() {
-    local script
+    local script tmp
     script=$(activation_script) || die \
         "cannot locate envconfig or loadLSST.sh for $LSST_CONDA_ENV_NAME"
     err "building environment snapshot for tag $TAG (this takes a few seconds)..."
     mkdir -p "$CACHE_DIR" || die "cannot create cache directory $CACHE_DIR"
+
+    # A private temporary file per build, so two cold builds racing for the
+    # same tag cannot write over each other's partial output. The final mv is
+    # atomic within the cache directory, so whichever finishes last wins and
+    # readers never see a half-written snapshot.
+    tmp=$(mktemp "$CACHE_DIR/env-build-XXXXXX") || \
+        die "cannot create a temporary file in $CACHE_DIR"
 
     # env -i drops everything the launching shell had set up, so the snapshot
     # holds lsst_distrib and nothing else. LSST_CONDA_ENV_NAME is passed
@@ -171,12 +178,15 @@ build_snapshot() {
             source "$1" 1>&2 || exit 1
             setup -t "$2" lsst_distrib || exit 1
             export -p | grep -Ev "^declare -x (PWD|OLDPWD|SHLVL|_|TERM)="
-        ' _ "$script" "$TAG" > "$SNAPSHOT.tmp"
+        ' _ "$script" "$TAG" > "$tmp"
     then
-        rm -f "$SNAPSHOT.tmp"
+        rm -f "$tmp"
         die "failed to build the environment snapshot for tag $TAG"
     fi
-    mv "$SNAPSHOT.tmp" "$SNAPSHOT"
+    if ! mv "$tmp" "$SNAPSHOT"; then
+        rm -f "$tmp"
+        die "cannot write the environment snapshot to $SNAPSHOT"
+    fi
 }
 
 if [ ! -s "$SNAPSHOT" ]; then
