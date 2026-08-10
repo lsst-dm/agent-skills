@@ -33,6 +33,14 @@ check "missing -t argument is rejected" assert_contains "$OUT" "requires"
 OUT=$(run_unactivated -l 2>&1)
 check "missing -l argument is rejected" assert_contains "$OUT" "requires"
 
+TMPFILE=$(mktemp)
+OUT=$("$LSST_RUN" -l "$TMPFILE" -- true 2>&1)
+check "-l on a file says it is not a directory" \
+    assert_contains "$OUT" "not a directory"
+check "-l on a file exits non-zero" \
+    assert_status 1 "$LSST_RUN" -l "$TMPFILE" -- true
+rm -f "$TMPFILE"
+
 if [ -z "${EUPS_PATH:-}" ] || [ -z "${LSST_CONDA_ENV_NAME:-}" ]; then
     echo "  skip: no active LSST environment; stack-dependent checks skipped"
     finish
@@ -45,8 +53,11 @@ check "--list-tags lists at least one build tag" \
 
 OUT=$("$LSST_RUN" -t b1 -- true 2>&1)
 check "invalid tag is rejected" assert_contains "$OUT" "b1"
+check "invalid tag exits non-zero" assert_status 1 "$LSST_RUN" -t b1 -- true
 
 OUT=$("$LSST_RUN" -l /nonexistent/clone -- true 2>&1)
 check "missing -l path is rejected" assert_contains "$OUT" "not found"
+check "missing -l path exits non-zero" \
+    assert_status 1 "$LSST_RUN" -l /nonexistent/clone -- true
 
 finish

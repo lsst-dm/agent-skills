@@ -42,10 +42,14 @@ while [ $# -gt 0 ]; do
             ;;
         -l)
             [ $# -ge 2 ] || die "-l requires a path argument"
-            dir=$( cd "$2" 2>/dev/null && pwd -P ) || die "-l path not found: $2"
-            LOCALS+=("$dir")
-            shift 2
-            ;;
+            if [ ! -e "$2" ]; then
+                die "-l path not found: $2"
+            elif [ ! -d "$2" ]; then
+                die "-l path is not a directory: $2"
+            fi
+            dir=$( cd "$2" 2>/dev/null && pwd -P ) || \
+                die "-l path is not readable: $2"
+            LOCALS+=("$dir"); shift 2 ;;
         --list-tags)
             LIST_TAGS=1
             shift
