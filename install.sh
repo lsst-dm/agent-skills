@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # Install this repository's skills into the discovery locations used by
 # Claude Code, Codex, and Antigravity.

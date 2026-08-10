@@ -3,6 +3,7 @@
 set -uo pipefail
 
 REPO_ROOT=$( cd "$(dirname "$0")/.." && pwd -P )
+BASH_BIN=${BASH_BIN:-bash}
 # shellcheck source=tests/lib.sh
 . "$REPO_ROOT/tests/lib.sh"
 
@@ -39,7 +40,7 @@ check "gemini target not created" test ! -e "$HOME_DIR/.gemini/config/skills/lss
 # The symlink points at this repository.
 # shellcheck disable=SC2016  # $1/$2 below are for the nested bash -c, not this shell
 check "symlink resolves into the repository" \
-    bash -c 'test "$( cd "$1" && pwd -P )" = "$2"' _ \
+    "$BASH_BIN" -c 'test "$( cd "$1" && pwd -P )" = "$2"' _ \
     "$HOME_DIR/.claude/skills/lsst-eups" "$REPO_ROOT/skills/lsst-eups"
 
 # Re-running is idempotent.
@@ -133,7 +134,7 @@ check "copy re-run succeeds without --force" \
     assert_status 0 env HOME="$HOME_DIR" "$INSTALL" --copy
 # shellcheck disable=SC2016  # $1 below is for the nested bash -c, not this shell
 check "copy re-run refreshes the content" \
-    bash -c '! grep -q stale "$1"' _ \
+    "$BASH_BIN" -c '! grep -q stale "$1"' _ \
     "$HOME_DIR/.claude/skills/lsst-eups/SKILL.md"
 check "copy re-run creates no backup" \
     test ! -e "$HOME_DIR/.claude/skills/lsst-eups.bak"
@@ -192,5 +193,12 @@ mkdir -p "$HOME_DIR/.claude/skills/lsst-eups"
 printf 'precious\n' > "$HOME_DIR/.claude/skills/lsst-eups/SKILL.md"
 check "refused uninstall exits non-zero" \
     assert_status 1 env HOME="$HOME_DIR" "$INSTALL" --uninstall
+
+# An absolute shebang keeps the installer on the system bash, which is the
+# 3.2 floor on macOS. `env bash` would pick up whatever is first on PATH and
+# silently exempt this script from the floor.
+# shellcheck disable=SC2016  # $1 below is for the nested bash -c, not this shell
+check "the installer names its interpreter absolutely" \
+    bash -c '[ "$(head -1 "$1")" = "#!/bin/bash" ]' _ "$INSTALL"
 
 finish

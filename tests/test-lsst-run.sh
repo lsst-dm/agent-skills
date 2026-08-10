@@ -5,6 +5,7 @@
 set -uo pipefail
 
 REPO_ROOT=$( cd "$(dirname "$0")/.." && pwd -P )
+BASH_BIN=${BASH_BIN:-bash}
 # shellcheck source=tests/lib.sh
 . "$REPO_ROOT/tests/lib.sh"
 
@@ -50,7 +51,7 @@ fi
 
 OUT=$("$LSST_RUN" --list-tags 2>&1)
 check "--list-tags lists at least one build tag" \
-    bash -c "printf '%s\n' \"\$1\" | grep -qE '^b[0-9]+$'" _ "$OUT"
+    "$BASH_BIN" -c "printf '%s\n' \"\$1\" | grep -qE '^b[0-9]+$'" _ "$OUT"
 
 OUT=$("$LSST_RUN" -t b1 -- true 2>&1)
 check "invalid tag is rejected" assert_contains "$OUT" "b1"
@@ -66,7 +67,7 @@ CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/lsst-run"
 OUT=$("$LSST_RUN" -- python -c 'import lsst.daf.butler; print("import-ok")' 2>&1)
 check "command runs against lsst_distrib" assert_contains "$OUT" "import-ok"
 
-check "snapshot was cached" bash -c 'ls "$1"/env-*.sh >/dev/null 2>&1' _ "$CACHE_DIR"
+check "snapshot was cached" "$BASH_BIN" -c 'ls "$1"/env-*.sh >/dev/null 2>&1' _ "$CACHE_DIR"
 
 # The snapshot must not leak the launching shell's local setups. lsst_build is
 # set up by envconfig in an lsstsw tree, so assert on a marker we control.

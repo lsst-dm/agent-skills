@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.." || exit 1
 # The interpreter used for each test file. Override it to check the bash 3.2
 # floor that macOS ships: BASH_BIN=/bin/bash ./tests/run-all.sh
 BASH_BIN=${BASH_BIN:-bash}
+export BASH_BIN
 
 status=0
 
