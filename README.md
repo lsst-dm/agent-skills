@@ -121,11 +121,14 @@ Review changes before pulling or installing, and treat skill review with the sam
 ## Validation
 
 ```bash
+python3 -m pip install -r requirements-dev.txt   # PyYAML, for the validator
 ./scripts/validate-skills   # layout, frontmatter, references, portability
 ./tests/run-all.sh          # validator plus the test suite
 ```
 
-Both run in CI on every push and pull request.
+Any Science Pipelines conda environment already provides PyYAML, so the install step is usually unnecessary.
+
+Both run in CI on every push and pull request, on Linux and macOS.
 
 ## License
 

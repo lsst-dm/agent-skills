@@ -131,33 +131,45 @@ OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
 check "absolute agent path is reported" \
     assert_contains "$OUT" "hardcoded install path"
 
-# Force the PyYAML-absent path so the fallback parser is genuinely exercised.
-SHIM=$(mktemp -d "$WORK/shim.XXXXXX")
-printf 'raise ImportError("simulated missing PyYAML")\n' > "$SHIM/yaml.py"
+# A skill may carry per-agent metadata. No agent but Codex reads
+# agents/openai.yaml, so the validator is the only thing standing between it
+# and silent drift from the skill it describes.
+write_openai_yaml() {
+    # write_openai_yaml DIR PROMPT_NAME [OMIT_FIELD]
+    local dir=$1 prompt_name=$2 omit=${3:-}
+    mkdir -p "$dir/agents"
+    {
+        printf 'interface:\n'
+        [ "$omit" = display_name ] || printf '  display_name: "A Skill"\n'
+        [ "$omit" = short_description ] || \
+            printf '  short_description: "Does a thing"\n'
+        printf '  default_prompt: "Use $%s to do the thing."\n' "$prompt_name"
+    } > "$dir/agents/openai.yaml"
+}
 
-ROOT=$(new_root); make_skill "$ROOT" fallback-ok >/dev/null
-check "fallback parser accepts a valid skill" \
-    assert_status 0 env PYTHONPATH="$SHIM" "$VALIDATE" --root "$ROOT"
+ROOT=$(new_root); DIR=$(make_skill "$ROOT" metadata-ok)
+write_openai_yaml "$DIR" metadata-ok
+check "valid agent metadata passes" assert_status 0 "$VALIDATE" --root "$ROOT"
 
-# An inline comment must not become part of the value.
-ROOT=$(new_root); DIR=$(make_skill "$ROOT" commented)
-perl -pi -e 's/^name: commented$/name: commented # an inline comment/' \
-    "$DIR/SKILL.md"
-check "fallback parser strips an inline comment" \
-    assert_status 0 env PYTHONPATH="$SHIM" "$VALIDATE" --root "$ROOT"
+ROOT=$(new_root); DIR=$(make_skill "$ROOT" metadata-drift)
+write_openai_yaml "$DIR" some-other-name
+OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
+check "a default prompt naming another skill is reported" \
+    assert_contains "$OUT" "some-other-name"
 
-# A value that is only a comment must parse as empty, not as the comment text.
-ROOT=$(new_root); DIR=$(make_skill "$ROOT" comment-only)
-perl -pi -e 's/^description: .*$/description: # placeholder/' "$DIR/SKILL.md"
-OUT=$(env PYTHONPATH="$SHIM" "$VALIDATE" --root "$ROOT" 2>&1) || true
-check "fallback parser treats a comment-only value as empty" \
-    assert_contains "$OUT" 'missing a `description` field'
+ROOT=$(new_root); DIR=$(make_skill "$ROOT" metadata-empty)
+write_openai_yaml "$DIR" metadata-empty short_description
+OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
+check "missing metadata field is reported" \
+    assert_contains "$OUT" "short_description"
 
-# A tab before the marker also starts a comment.
-ROOT=$(new_root); DIR=$(make_skill "$ROOT" tab-comment)
-perl -pi -e 's/^name: tab-comment$/name: tab-comment\t# note/' "$DIR/SKILL.md"
-check "fallback parser strips a tab-delimited comment" \
-    assert_status 0 env PYTHONPATH="$SHIM" "$VALIDATE" --root "$ROOT"
+ROOT=$(new_root); DIR=$(make_skill "$ROOT" metadata-broken)
+mkdir -p "$DIR/agents"
+printf 'interface:\n  display_name: "unclosed\n   bad: [\n' \
+    > "$DIR/agents/openai.yaml"
+OUT=$("$VALIDATE" --root "$ROOT" 2>&1) || true
+check "unparsable agent metadata is reported" \
+    assert_contains "$OUT" "openai.yaml"
 
 # The README skills table must list exactly the skills that exist.
 ROOT=$(new_root); make_skill "$ROOT" listed >/dev/null

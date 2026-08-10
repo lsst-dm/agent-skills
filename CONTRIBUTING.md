@@ -37,6 +37,15 @@ Watch for BSD versus GNU differences in tool flags.
 
 ## Running the checks
 
+The validator needs PyYAML.
+Any Science Pipelines conda environment already provides it; otherwise install the development dependencies:
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+```
+
+Then:
+
 ```bash
 ./scripts/validate-skills
 ./tests/run-all.sh

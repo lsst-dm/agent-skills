@@ -23,6 +23,9 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
+      - name: Install development dependencies
+        run: python3 -m pip install --upgrade -r requirements-dev.txt
+
       - name: Validate skills
         run: ./scripts/validate-skills
 

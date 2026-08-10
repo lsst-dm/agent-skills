@@ -16,6 +16,15 @@ import sys
 import tempfile
 from pathlib import Path
 
+try:
+    import yaml
+except ImportError:  # pragma: no cover - depends on the environment
+    sys.exit(
+        "validate-skills: PyYAML is required.\n"
+        "Install it with `pip install pyyaml`, or run inside an environment "
+        "that already provides it."
+    )
+
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 # Markdown links to relative targets, and backticked paths under a known
@@ -55,10 +64,6 @@ def load_frontmatter(text: str) -> tuple[dict, list[str]]:
         return {}, ["unterminated YAML frontmatter block"]
     block = "\n".join(lines[1:end])
     try:
-        import yaml
-    except ImportError:
-        return parse_flat_mapping(block)
-    try:
         data = yaml.safe_load(block)
     except Exception as exc:  # noqa: BLE001 - report any parse failure
         return {}, [f"frontmatter does not parse as YAML: {exc}"]
@@ -69,40 +74,45 @@ def load_frontmatter(text: str) -> tuple[dict, list[str]]:
     return data, []
 
 
-def parse_flat_mapping(block: str) -> tuple[dict, list[str]]:
-    """Parse the flat `key: value` subset that skill frontmatter uses.
+def check_agent_metadata(skill_dir: Path, name: str, report) -> None:
+    """Validate the optional per-agent metadata a skill may carry.
 
-    Used only when PyYAML is unavailable, so that validation never requires
-    installing anything.
+    These files are additive and ignored by agents that do not know them, so
+    nothing else in the repository reads them. That is exactly why they are
+    checked: an unread file drifts from the skill it describes silently.
     """
-    fields: dict[str, str] = {}
-    errors: list[str] = []
-    for offset, line in enumerate(block.splitlines()):
-        lineno = offset + 2  # account for the opening --- line
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        if line[:1].isspace():
-            errors.append(
-                f"line {lineno}: nested frontmatter needs PyYAML to validate"
-            )
-            continue
-        key, sep, value = line.partition(":")
-        if not sep:
-            errors.append(f"line {lineno}: not a `key: value` pair")
-            continue
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
-        elif value.startswith("#"):
-            value = ""
-        else:
-            # YAML starts an inline comment at a `#` preceded by whitespace,
-            # so a `#` inside a word is part of the value.
-            comment = re.search(r"\s#", value)
-            if comment:
-                value = value[: comment.start()].rstrip()
-        fields[key.strip()] = value
-    return fields, errors
+    path = skill_dir / "agents" / "openai.yaml"
+    if not path.is_file():
+        return
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - report any parse failure
+        report(path, f"does not parse as YAML: {exc}")
+        return
+    if not isinstance(data, dict):
+        report(path, "is not a key/value mapping")
+        return
+
+    interface = data.get("interface")
+    if not isinstance(interface, dict):
+        report(path, "has no `interface` mapping")
+        return
+    for field in ("display_name", "short_description"):
+        value = interface.get(field)
+        if not isinstance(value, str) or not value.strip():
+            report(path, f"`interface.{field}` is missing or empty")
+
+    # Codex substitutes the skill by name, so a renamed skill leaves this
+    # pointing at something that no longer exists.
+    prompt = interface.get("default_prompt", "")
+    if isinstance(prompt, str):
+        for referenced in re.findall(r"\$([a-z0-9-]+)", prompt):
+            if referenced != name:
+                report(
+                    path,
+                    f"`interface.default_prompt` names `${referenced}`, "
+                    f"but the skill is `{name}`",
+                )
 
 
 def referenced_paths(text: str) -> list[str]:
@@ -207,6 +217,8 @@ def validate_skill(skill_dir: Path, report) -> None:
             f"hardcoded install path `{match.group(0)}`; refer to skill files "
             "relatively instead",
         )
+
+    check_agent_metadata(skill_dir, skill_dir.name, report)
 
     scripts_dir = skill_dir / "scripts"
     if scripts_dir.is_dir():

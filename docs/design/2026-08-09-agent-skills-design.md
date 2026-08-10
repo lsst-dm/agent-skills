@@ -44,7 +44,7 @@ agent-skills/
 │       └── scripts/
 │           └── lsst-run
 ├── scripts/
-│   └── validate-skills          # python3, standard library only
+│   └── validate-skills          # python3, requires PyYAML
 ├── tests/
 │   ├── run-all.sh
 │   ├── test-validate-skills.sh
@@ -119,8 +119,14 @@ This rule matters immediately: real directories exist today at `~/.claude/skills
 
 ## Validation and CI
 
-`scripts/validate-skills` is a python3 program using only the standard library.
-It parses YAML frontmatter with PyYAML when importable and falls back to a minimal parser covering the flat `key: value` subset that skill frontmatter uses, so it never requires a `pip install`.
+`scripts/validate-skills` is a python3 program requiring PyYAML, listed in `requirements-dev.txt`.
+
+An earlier design avoided any dependency by falling back to a hand-rolled parser for the flat `key: value` subset that frontmatter uses.
+That fallback proved to be a poor trade.
+It needed two rounds of fixes for comment handling alone, it was invisible on any machine that had PyYAML installed, and it could not parse the nested `agents/openai.yaml` metadata at all, which left the one file no agent reads as the one file nothing checked.
+Requiring PyYAML for the repository's own tooling costs a development dependency and removes an entire class of parsing bugs.
+
+Skills themselves are unaffected: a skill may use the standard library, or whatever its target environment already provides.
 
 Checks:
 
@@ -136,6 +142,7 @@ Checks:
 10. Every skill under `skills/` appears in the available-skills list in `README.md`, and that list names no skill that does not exist.
 11. No `SKILL.md` names a per-agent discovery location such as `~/.claude/skills` or `~/.codex/skills`, since a skill must not hardcode its own installed path.
 12. `CLAUDE.md` and `GEMINI.md` are symlinks named `AGENTS.md`, not copies.
+13. A skill's optional `agents/openai.yaml` parses, carries a non-empty `interface.display_name` and `interface.short_description`, and its `default_prompt` names the skill it belongs to rather than some other one.
 
 The validator exits non-zero on any failure and prints one diagnostic per problem with the offending path.
 

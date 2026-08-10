@@ -97,8 +97,12 @@ Prefer `( cd "$d" && pwd -P )` for resolving a directory anyway, since it needs 
 
 Shell scripts must pass `shellcheck` with no warnings.
 
-Python helpers use the standard library only.
-Nothing in this repository may require a `pip install`.
+A skill's own helpers should lean on the standard library, or on packages already present in the environment the skill targets.
+The `lsst-eups` skill, for instance, may rely on anything in the Science Pipelines conda environment, because that environment is its prerequisite.
+
+The repository's own tooling is a different matter.
+`scripts/validate-skills` requires PyYAML, since a skill's frontmatter and its per-agent metadata are YAML and hand-rolled parsing of them was a recurring source of bugs.
+Development dependencies are listed in `requirements-dev.txt`.
 
 ## Prose style
 
