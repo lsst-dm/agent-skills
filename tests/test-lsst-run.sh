@@ -43,6 +43,16 @@ check "-l on a file exits non-zero" \
     assert_status 1 "$LSST_RUN" -l "$TMPFILE" -- true
 rm -f "$TMPFILE"
 
+# Entering a directory needs its execute bit, not its read bit, so the
+# diagnostic has to name the permission that is actually missing.
+NOEXEC=$(mktemp -d)
+chmod 000 "$NOEXEC"
+OUT=$(run_unactivated -l "$NOEXEC" -- true 2>&1)
+check "-l on an unenterable directory names the execute permission" \
+    assert_contains "$OUT" "execute permission"
+chmod 755 "$NOEXEC"
+rmdir "$NOEXEC"
+
 # A movable tag would pin the snapshot to whatever it pointed at on the day it
 # was cached, so only tags naming a fixed point are accepted.
 OUT=$(run_unactivated -t current -- true 2>&1)
@@ -103,6 +113,12 @@ OUT=$(LC_ALL=en_US.UTF-8 "$LSST_RUN" -- sh -c 'echo "lc=[${LC_ALL:-}]"' 2>&1)
 check "LC_ALL is carried into the command" \
     assert_contains "$OUT" "lc=[en_US.UTF-8]"
 
+# All six POSIX locale categories, not five of them.
+OUT=$(LC_MONETARY=en_US.UTF-8 "$LSST_RUN" -- \
+    sh -c 'echo "lc=[${LC_MONETARY:-}]"' 2>&1)
+check "LC_MONETARY is carried into the command" \
+    assert_contains "$OUT" "lc=[en_US.UTF-8]"
+
 EMPTY_CLONE=$(mktemp -d)
 check "the no-command form still validates local clones" \
     assert_status 1 "$LSST_RUN" -l "$EMPTY_CLONE"
@@ -110,6 +126,17 @@ rmdir "$EMPTY_CLONE"
 
 OUT=$("$LSST_RUN" -- sh -c 'echo "tag=$SETUP_LSST_DISTRIB"' 2>&1)
 check "lsst_distrib is set up in the snapshot" assert_contains "$OUT" "lsst_distrib"
+
+# Tags are resolved against the active environment but the command runs in the
+# rebuilt one. A personal stack layered in front of a shared one makes those
+# differ, so a chosen tag may not mean the same thing where it is used.
+OUT=$(EUPS_PATH="/tmp/layered-stack:$EUPS_PATH" "$LSST_RUN" -- true 2>&1)
+check "a differing EUPS_PATH is reported" \
+    assert_contains "$OUT" "tags were resolved against"
+
+OUT=$("$LSST_RUN" -- true 2>&1)
+check "a matching EUPS_PATH says nothing" \
+    assert_not_contains "$OUT" "tags were resolved against"
 
 # A second call must reuse the cached snapshot rather than rebuilding it.
 OUT=$("$LSST_RUN" -- true 2>&1)

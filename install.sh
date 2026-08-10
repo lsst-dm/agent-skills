@@ -8,7 +8,6 @@ REPO_ROOT=$( cd "$(dirname "$0")" && pwd -P )
 
 err() { echo "install.sh: $*" >&2; }
 
-[ -n "${HOME:-}" ] || { err "HOME is not set"; exit 1; }
 SKILLS_DIR="$REPO_ROOT/skills"
 
 # Written into every directory this installer copies, recording where it
@@ -67,6 +66,10 @@ while [ $# -gt 0 ]; do
     REQUESTED+=("$1")
     shift
 done
+
+# Every discovery location is built from HOME, so an empty one would target
+# the filesystem root. Checked after parsing so --help still works without it.
+[ -n "${HOME:-}" ] || { err "HOME is not set"; exit 1; }
 
 # Whether an agent is installed for this user.
 agent_present() {

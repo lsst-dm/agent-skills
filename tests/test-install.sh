@@ -229,6 +229,21 @@ check "uninstall reports a remaining backup" assert_contains "$OUT" ".bak"
 check "the backup itself survives uninstall" \
     grep -q precious "$HOME_DIR/.claude/skills/lsst-eups.bak/SKILL.md"
 
+# Replacing an entry this installer made discards any edits inside it, so the
+# real run has to say so rather than only the dry run.
+HOME_DIR=$(fresh_home .claude)
+run_install "$HOME_DIR" --copy >/dev/null
+OUT=$(run_install "$HOME_DIR" --copy)
+check "a real run reports replacing its own entry" \
+    assert_contains "$OUT" "replaced"
+
+# --help describes the tool, so it must work before HOME matters.
+OUT=$(HOME='' "$INSTALL" --help 2>&1)
+check "--help works without HOME" assert_status 0 env HOME= "$INSTALL" --help
+check "--help still prints usage" assert_contains "$OUT" "Usage:"
+check "an install without HOME is refused" \
+    assert_status 1 env HOME= "$INSTALL" --claude
+
 # With no backup present there is nothing to mention.
 HOME_DIR=$(fresh_home .claude)
 run_install "$HOME_DIR" >/dev/null

@@ -81,7 +81,7 @@ while [ $# -gt 0 ]; do
                 die "-l path is not a directory: $2"
             fi
             dir=$( cd "$2" 2>/dev/null && pwd -P ) || \
-                die "-l path is not readable: $2"
+                die "-l path cannot be entered, check its execute permission: $2"
             LOCALS+=("$dir"); shift 2 ;;
         --list-tags)
             LIST_TAGS=1
@@ -238,7 +238,13 @@ build_snapshot() {
         ' _ "$script" "$TAG" > "$tmp"
     then
         rm -f "$tmp"
-        die "failed to build the environment snapshot for tag $TAG"
+        err "failed to build the environment snapshot for tag $TAG"
+        err "$TAG was accepted by the active environment, whose EUPS_PATH is:"
+        err "    $EUPS_PATH"
+        err "but the rebuilt environment comes from $script, which may search"
+        err "a different tree. A tag from a personal stack layered onto a"
+        err "shared one will fail here."
+        exit 1
     fi
     if ! mv "$tmp" "$SNAPSHOT"; then
         rm -f "$tmp"
@@ -259,6 +265,18 @@ if ! ( . "$SNAPSHOT" >/dev/null 2>&1; command -v eups >/dev/null 2>&1 ); then
     build_snapshot
 fi
 
+# Tags were resolved against the active environment, but the command runs in
+# the rebuilt one. Those search the same tree in every ordinary setup; where
+# they differ, say so, because the tag that was chosen may not mean there what
+# it meant here.
+snapshot_eups_path=$(
+    sed -n 's/^declare -x EUPS_PATH="\(.*\)"$/\1/p' "$SNAPSHOT" | head -1
+)
+if [ -n "$snapshot_eups_path" ] && [ "$snapshot_eups_path" != "$EUPS_PATH" ]; then
+    err "note: tags were resolved against EUPS_PATH=$EUPS_PATH"
+    err "      but the command runs with EUPS_PATH=$snapshot_eups_path"
+fi
+
 # Rebuild the process environment from the snapshot alone rather than
 # sourcing it over the inherited one. Sourcing can only overwrite what the
 # snapshot defines, leaving anything else in place for the command: a stray
@@ -267,7 +285,8 @@ fi
 # ordinary tools need, are carried across.
 CLEAN_ENV=(HOME="$HOME")
 for name in USER LOGNAME TERM TMPDIR TZ LANG \
-            LC_ALL LC_CTYPE LC_COLLATE LC_NUMERIC LC_TIME LC_MESSAGES \
+            LC_ALL LC_CTYPE LC_COLLATE LC_MESSAGES LC_MONETARY \
+            LC_NUMERIC LC_TIME \
             SSH_AUTH_SOCK http_proxy https_proxy no_proxy; do
     eval "carried=\${$name+set}"
     if [ "${carried:-}" = set ]; then
@@ -304,9 +323,12 @@ RUN_CLEAN=(env -i
     ${LOCALS[@]+"${LOCALS[@]}"})
 
 if [ $# -eq 0 ]; then
-    # Apply the clones anyway, so an unusable one is reported rather than
-    # silently accepted.
-    "${RUN_CLEAN[@]}" true || exit 1
+    # Apply any clones anyway, so an unusable one is reported rather than
+    # silently accepted. With none to apply there is nothing left to check,
+    # the snapshot having already been validated above.
+    if [ ${#LOCALS[@]} -gt 0 ]; then
+        "${RUN_CLEAN[@]}" true || exit 1
+    fi
     err "environment ready (no command given)"
     exit 0
 fi
