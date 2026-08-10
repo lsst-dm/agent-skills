@@ -7,7 +7,7 @@ description: Use when work on an LSST Science Pipelines package needs the EUPS s
 
 ## Overview
 
-Run every stack-dependent command through the `lsst-run` wrapper in this skill's `scripts/` directory.
+Run every stack-dependent command through `scripts/lsst-run` in this skill's directory.
 Invoke it by its path within this skill directory; the examples below write `lsst-run` for brevity.
 
 It runs the command against a pristine environment holding `lsst_distrib` at a build tag plus any local package clones named on the command line.
