@@ -65,7 +65,7 @@ def load_frontmatter(text: str) -> tuple[dict, list[str]]:
     block = "\n".join(lines[1:end])
     try:
         data = yaml.safe_load(block)
-    except Exception as exc:  # noqa: BLE001 - report any parse failure
+    except Exception as exc:
         return {}, [f"frontmatter does not parse as YAML: {exc}"]
     if data is None:
         return {}, ["frontmatter block is empty"]
@@ -86,7 +86,7 @@ def check_agent_metadata(skill_dir: Path, name: str, report) -> None:
         return
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001 - report any parse failure
+    except Exception as exc:
         report(path, f"does not parse as YAML: {exc}")
         return
     if not isinstance(data, dict):
@@ -110,8 +110,7 @@ def check_agent_metadata(skill_dir: Path, name: str, report) -> None:
             if referenced != name:
                 report(
                     path,
-                    f"`interface.default_prompt` names `${referenced}`, "
-                    f"but the skill is `{name}`",
+                    f"`interface.default_prompt` names `${referenced}`, but the skill is `{name}`",
                 )
 
 
@@ -142,9 +141,7 @@ def is_shell_script(path: Path) -> bool:
 
 
 def check_shell(path: Path, report) -> None:
-    result = subprocess.run(
-        ["bash", "-n", str(path)], capture_output=True, text=True
-    )
+    result = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True)
     if result.returncode != 0:
         report(path, f"shell syntax error: {result.stderr.strip()}")
         return
@@ -162,9 +159,7 @@ def check_shell(path: Path, report) -> None:
 def check_python(path: Path, report) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         try:
-            py_compile.compile(
-                str(path), cfile=os.path.join(tmp, "out.pyc"), doraise=True
-            )
+            py_compile.compile(str(path), cfile=os.path.join(tmp, "out.pyc"), doraise=True)
         except py_compile.PyCompileError as exc:
             report(path, f"python syntax error: {exc}")
 
@@ -195,8 +190,7 @@ def validate_skill(skill_dir: Path, report) -> None:
         if name != skill_dir.name:
             report(
                 entrypoint,
-                f"frontmatter name `{name}` does not match directory "
-                f"`{skill_dir.name}`",
+                f"frontmatter name `{name}` does not match directory `{skill_dir.name}`",
             )
         if not NAME_RE.match(name):
             report(
@@ -214,8 +208,7 @@ def validate_skill(skill_dir: Path, report) -> None:
     for match in HARDCODED_PATH_RE.finditer(text):
         report(
             entrypoint,
-            f"hardcoded install path `{match.group(0)}`; refer to skill files "
-            "relatively instead",
+            f"hardcoded install path `{match.group(0)}`; refer to skill files relatively instead",
         )
 
     check_agent_metadata(skill_dir, skill_dir.name, report)
