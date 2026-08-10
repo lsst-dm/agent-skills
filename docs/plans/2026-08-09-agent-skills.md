@@ -704,6 +704,16 @@ check "missing -t argument is rejected" assert_contains "$OUT" "requires"
 OUT=$(run_unactivated -l 2>&1)
 check "missing -l argument is rejected" assert_contains "$OUT" "requires"
 
+# Argument parsing happens before the environment check, so these run with or
+# without a stack and therefore stay covered in CI.
+TMPFILE=$(mktemp)
+OUT=$("$LSST_RUN" -l "$TMPFILE" -- true 2>&1)
+check "-l on a file says it is not a directory" \
+    assert_contains "$OUT" "not a directory"
+check "-l on a file exits non-zero" \
+    assert_status 1 "$LSST_RUN" -l "$TMPFILE" -- true
+rm -f "$TMPFILE"
+
 if [ -z "${EUPS_PATH:-}" ] || [ -z "${LSST_CONDA_ENV_NAME:-}" ]; then
     echo "  skip: no active LSST environment; stack-dependent checks skipped"
     finish
@@ -716,9 +726,12 @@ check "--list-tags lists at least one build tag" \
 
 OUT=$("$LSST_RUN" -t b1 -- true 2>&1)
 check "invalid tag is rejected" assert_contains "$OUT" "b1"
+check "invalid tag exits non-zero" assert_status 1 "$LSST_RUN" -t b1 -- true
 
 OUT=$("$LSST_RUN" -l /nonexistent/clone -- true 2>&1)
 check "missing -l path is rejected" assert_contains "$OUT" "not found"
+check "missing -l path exits non-zero" \
+    assert_status 1 "$LSST_RUN" -l /nonexistent/clone -- true
 
 finish
 ```
@@ -776,7 +789,13 @@ while [ $# -gt 0 ]; do
             ;;
         -l)
             [ $# -ge 2 ] || die "-l requires a path argument"
-            dir=$( cd "$2" 2>/dev/null && pwd -P ) || die "-l path not found: $2"
+            if [ ! -e "$2" ]; then
+                die "-l path not found: $2"
+            elif [ ! -d "$2" ]; then
+                die "-l path is not a directory: $2"
+            fi
+            dir=$( cd "$2" 2>/dev/null && pwd -P ) || \
+                die "-l path is not readable: $2"
             LOCALS+=("$dir")
             shift 2
             ;;
@@ -892,7 +911,7 @@ shellcheck skills/lsst-eups/scripts/lsst-run
 ./scripts/validate-skills
 ```
 
-Expected: `lsst-run` tests pass (9 checks with a stack active, 6 without). shellcheck silent. Validator reports `1 skill(s) validated`.
+Expected: `lsst-run` tests pass (13 checks with a stack active, 8 without). shellcheck silent. Validator reports `1 skill(s) validated`.
 
 - [ ] **Step 6: Commit**
 
@@ -1068,7 +1087,7 @@ shellcheck skills/lsst-eups/scripts/lsst-run
 ./scripts/validate-skills
 ```
 
-Expected: `14 checks, 0 failed` with a stack active. shellcheck silent even though the `SC2034` directive was removed, because `CACHE_DIR` is now read. Validator reports `1 skill(s) validated`.
+Expected: `18 checks, 0 failed` with a stack active. shellcheck silent even though the `SC2034` directive was removed, because `CACHE_DIR` is now read. Validator reports `1 skill(s) validated`.
 
 - [ ] **Step 6: Verify local clone layering by hand**
 
