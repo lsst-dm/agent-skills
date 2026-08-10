@@ -2055,9 +2055,13 @@ def check_agent_guides(root: Path, report) -> None:
             else:
                 report(path, "missing; must be a symlink to AGENTS.md")
             continue
-        target = os.readlink(path)
-        if target != "AGENTS.md":
-            report(path, f"symlink points at {target}, expected AGENTS.md")
+        # Compare resolved paths so any spelling that lands on the canonical
+        # file is accepted, while a link to another file is still rejected.
+        if path.resolve() != canonical.resolve():
+            report(
+                path,
+                f"symlink points at {os.readlink(path)}, expected AGENTS.md",
+            )
 ```
 
 Then call it from `main`, immediately after the `check_readme(...)` call:
@@ -2208,7 +2212,7 @@ bash tests/test-validate-skills.sh
 ./tests/run-all.sh
 ```
 
-Expected: `ls -l` shows both as `-> AGENTS.md`. Validator tests report `23 checks, 0 failed`, and `run-all.sh` exits 0.
+Expected: `ls -l` shows both as `-> AGENTS.md`. Validator tests report `25 checks, 0 failed`, and `run-all.sh` exits 0.
 
 - [ ] **Step 7: Confirm git stores them as symlinks, not copies**
 
