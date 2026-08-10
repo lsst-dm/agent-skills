@@ -55,8 +55,10 @@ Move or remove the old `.bak` before running `--force` again.
 
 Under the default symlink installation, `git pull` is enough — every agent sees the updated skill immediately.
 
-Under `--copy`, re-run `./install.sh --copy` after pulling, otherwise the installed copies keep the version they were installed with.
-A copy this installer made records its origin, so re-running refreshes it in place without needing `--force`.
+Under `--copy`, re-run `./install.sh --copy` after pulling to refresh the installed copies.
+A copy this installer made records its origin, so re-running in the same mode refreshes it in place without `--force`.
+
+Switching an installed skill between link and copy needs `--force`, so a routine `./install.sh` will not quietly turn a copy back into a symlink.
 
 ## Creating a skill
 

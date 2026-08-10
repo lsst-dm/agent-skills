@@ -186,6 +186,16 @@ for agent in ${AGENTS[@]+"${AGENTS[@]}"}; do
                     echo "up to date: $target"
                     continue
                 fi
+                if { [ "$MODE" = link ] && [ ! -L "$target" ]; } ||
+                   { [ "$MODE" = copy ] && [ -L "$target" ]; }; then
+                    # Switching between link and copy undoes a deliberate
+                    # choice, so it is never done by default.
+                    if [ "$FORCE" != 1 ]; then
+                        err "$target is installed as the other mode; pass --force to switch it"
+                        exit_status=1
+                        continue
+                    fi
+                fi
                 # Ours already, so nothing needs preserving. Replacing rather
                 # than skipping is what lets a copy pick up a pull.
                 if [ "$DRY_RUN" = 1 ]; then

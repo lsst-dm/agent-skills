@@ -138,6 +138,22 @@ check "copy re-run refreshes the content" \
 check "copy re-run creates no backup" \
     test ! -e "$HOME_DIR/.claude/skills/lsst-eups.bak"
 
+# A deliberate install mode is not silently undone by a later default run.
+HOME_DIR=$(fresh_home .claude)
+run_install "$HOME_DIR" --copy >/dev/null
+OUT=$(run_install "$HOME_DIR")
+check "a mode switch requires --force" \
+    assert_status 1 env HOME="$HOME_DIR" "$INSTALL"
+check "the mode switch conflict is reported" assert_contains "$OUT" "--force"
+check "the copy survives a refused mode switch" \
+    test ! -L "$HOME_DIR/.claude/skills/lsst-eups"
+check "a forced mode switch succeeds" \
+    assert_status 0 env HOME="$HOME_DIR" "$INSTALL" --force
+check "a forced mode switch produces a symlink" \
+    test -L "$HOME_DIR/.claude/skills/lsst-eups"
+check "a forced mode switch creates no backup" \
+    test ! -e "$HOME_DIR/.claude/skills/lsst-eups.bak"
+
 # --dry-run changes nothing.
 HOME_DIR=$(fresh_home .claude)
 OUT=$(run_install "$HOME_DIR" --dry-run)
