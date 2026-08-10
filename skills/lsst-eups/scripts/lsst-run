@@ -36,6 +36,10 @@ while [ $# -gt 0 ]; do
     case "$1" in
         -t)
             [ $# -ge 2 ] || die "-t requires a tag argument"
+            case "$2" in
+                b[0-9]*) ;;
+                *) die "-t takes an immutable bNNNN build tag, not $2" ;;
+            esac
             TAG="$2"
             shift 2
             ;;

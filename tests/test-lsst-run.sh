@@ -43,6 +43,9 @@ check "-l on a file exits non-zero" \
     assert_status 1 "$LSST_RUN" -l "$TMPFILE" -- true
 rm -f "$TMPFILE"
 
+OUT=$(run_unactivated -t current -- true 2>&1)
+check "a movable tag is refused" assert_contains "$OUT" "immutable"
+
 if [ -z "${EUPS_PATH:-}" ] || [ -z "${LSST_CONDA_ENV_NAME:-}" ]; then
     echo "  skip: no active LSST environment; stack-dependent checks skipped"
     finish
