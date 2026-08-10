@@ -104,6 +104,13 @@ An existing real directory, or a symlink pointing elsewhere, is never replaced w
 Without `--force` the installer reports the conflict and exits non-zero, leaving the target untouched.
 With `--force` the existing entry is moved aside to `<name>.bak` before installation.
 
+The installer never deletes a `<name>.bak`.
+If one already exists it refuses and says so, because the alternative is destroying the only remaining copy of whatever a previous `--force` preserved.
+
+Provenance is recorded rather than inferred.
+A copied installation carries a marker file naming the repository it came from, so a copy this installer made is still recognized as its own after the repository changes, and is refreshed in place rather than being treated as a stranger and backed up again.
+Comparing content instead would misclassify every outdated copy the moment anyone pulled.
+
 This rule matters immediately: real directories exist today at `~/.claude/skills/lsst-eups` and `~/.codex/skills/lsst-eups`, and both hold hand-edited content that must not be destroyed silently.
 
 `--dry-run` prints the actions that would be taken and changes nothing.
