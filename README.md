@@ -60,75 +60,32 @@ A copy this installer made records its origin, so re-running in the same mode re
 
 Switching an installed skill between link and copy needs `--force`, so a routine `./install.sh` will not quietly turn a copy back into a symlink.
 
-## Creating a skill
+## Writing a skill
 
-```text
-skills/my-new-skill/
-├── SKILL.md
-├── scripts/       # optional executable helpers
-├── references/    # optional supporting documentation
-└── assets/        # optional templates and static files
-```
+The rules for writing a skill — layout, frontmatter, portability, helper scripts, and the checks to run — live in one place, [AGENTS.md](AGENTS.md).
 
-A minimal `SKILL.md`:
+That file is what Claude Code, Codex, Gemini CLI, and Antigravity all load when working in this repository, through the `CLAUDE.md` and `GEMINI.md` symlinks, and it is equally the reference for a person.
+Keeping the rules in a single file is the point: this repository exists because two hand-installed copies of one skill drifted apart, and its own documentation is held to the same standard.
 
-```markdown
----
-name: my-new-skill
-description: Use when ... — describe the triggering situation, not just the topic.
----
-
-# My New Skill
-
-Instructions go here.
-```
-
-The directory name must match the `name` field, and both must be lowercase words separated by hyphens.
-Add the skill to the table above; CI checks that the list matches `skills/`.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
-
-## Portability guidelines
-
-Write agent-neutral instructions by default.
-Describe what to do in terms of ordinary commands and files rather than a particular agent's tool names, slash commands, or permission prompts.
-
-Never hardcode a skill's own installed path.
-That path differs per agent and per install mode, so refer to helpers relatively as `scripts/<name>`; every supported agent tells the model where the skill directory is.
-
-Put reusable deterministic operations in `scripts/` as ordinary command-line programs with explicit arguments, documented dependencies, useful exit codes, and clean separation of stdout and stderr.
-Put detailed supporting material in `references/` rather than bloating `SKILL.md`.
-
-Where behavior genuinely differs between agents, express the difference conditionally inside the one `SKILL.md`.
-Forking a skill per agent is a last resort.
-
-Agent-specific metadata that other agents ignore, such as `agents/openai.yaml` for Codex, may live in the canonical skill directory because it is additive.
-
-## Guidance for agents
-
-[AGENTS.md](AGENTS.md) carries the instructions an agent needs when adding or editing a skill here.
-
-`CLAUDE.md` and `GEMINI.md` are symlinks to it, so Claude Code, Codex, Gemini CLI, and Antigravity all read the same guidance from one file.
-Edit `AGENTS.md`; the validator rejects an alias that has been replaced by a copy.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the review workflow.
 
 ## Security
 
-A skill is executable instruction, and anything under `scripts/` is executable code that your agent may run with your privileges.
+Installing a skill grants it real reach.
+A skill is executable instruction, and anything under `scripts/` is code your agent may run with your privileges.
 
-Installing a skill from this repository grants it that reach, and under the default symlink installation a `git pull` updates what your agents execute without any further action from you.
-Review changes before pulling or installing, and treat skill review with the same care as any other code review.
+Under the default symlink installation, a `git pull` changes what your agents execute with no further action from you.
+Review what you pull, and treat a skill the way you would treat any other code you are about to run.
 
 ## Validation
 
 ```bash
-python3 -m pip install -r requirements-dev.txt   # PyYAML, for the validator
-./scripts/validate-skills   # layout, frontmatter, references, portability
-./tests/run-all.sh          # validator plus the test suite
+./tests/run-all.sh
 ```
 
-Any Science Pipelines conda environment already provides PyYAML, so the install step is usually unnecessary.
+This runs the skill validator and the full test suite, and CI runs the same checks on Linux and macOS for every push and pull request.
 
-Both run in CI on every push and pull request, on Linux and macOS.
+[AGENTS.md](AGENTS.md) covers the prerequisites and the individual commands.
 
 ## License
 

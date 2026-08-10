@@ -275,9 +275,20 @@ The `loadLSST.sh` branch has no lsstinstall tree available to test against yet, 
 
 ## Documentation
 
-`README.md` covers what the repository is, quick start, how to list available skills, how to create a skill, portability guidelines, installation and discovery locations, what happens on `git pull` under each install mode, and a security note that skills and their scripts are executable instructions that should be reviewed before installing or updating.
+The three documents divide by audience, and each rule is stated in exactly one of them.
 
-`CONTRIBUTING.md` covers the skill directory layout, a minimal `SKILL.md` example, how to run the validator and tests locally, and the review expectation for changes.
+`AGENTS.md` is the single source of truth for how a skill is written: layout, frontmatter, portability, helper script constraints, prose conventions, and the checks to run before finishing.
+It is what every agent loads, through the `CLAUDE.md` and `GEMINI.md` symlinks, and it is equally the reference for a person doing the same work.
+
+`README.md` covers what the repository is, quick start, the available-skills table, installation and discovery locations, what happens on `git pull` under each install mode, and the risk a user accepts by installing a skill.
+It points at `AGENTS.md` for authoring rather than restating any of them.
+
+`CONTRIBUTING.md` covers only the workflow around a change: branch, pull request, and the review expectation.
+It states no authoring rule of its own.
+
+Restating a rule in a second document was tried and abandoned.
+A wrong claim about `sort -V` sat in two files at once and was corrected in one of them first, which is precisely the divergence this repository exists to prevent.
+Its own documentation is not exempt from that, so the rules have one home and the other documents link to it.
 
 The available-skills list in `README.md` is checked against `skills/` by the validator so it cannot go stale.
 

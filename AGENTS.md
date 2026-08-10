@@ -3,10 +3,17 @@
 This repository holds reusable Agent Skills maintained by the Rubin Observatory Data Management team.
 Every skill installs unchanged into Claude Code, Codex, and Antigravity from one canonical copy.
 
+**This file is the single source of truth for how skills are written here**, for agents and people alike.
+`README.md` describes what the repository is and how to install from it; `CONTRIBUTING.md` covers the review workflow.
+Neither restates the rules below, so there is one place to change when a rule changes.
+
 `CLAUDE.md` and `GEMINI.md` are symlinks to this file so that every agent reads the same guidance.
 Edit `AGENTS.md` and never replace an alias with a copy; the validator rejects that.
 
 ## Before you finish
+
+The validator needs PyYAML.
+Any Science Pipelines conda environment already provides it; otherwise install the development dependencies with `python3 -m pip install -r requirements-dev.txt`.
 
 Run both of these and confirm they pass:
 
@@ -14,6 +21,18 @@ Run both of these and confirm they pass:
 ./scripts/validate-skills
 ./tests/run-all.sh
 ```
+
+Install `shellcheck` for the full set of shell checks; the validator skips it when absent.
+
+Tests needing a live LSST stack skip themselves when no environment is active, so the suite passes on a machine without one.
+
+To check the bash 3.2 floor that macOS ships, run the suite under the system bash:
+
+```bash
+BASH_BIN=/bin/bash ./tests/run-all.sh
+```
+
+CI does this automatically on its macOS leg.
 
 Do not push to the remote.
 Commit locally and leave pushing to a human.
@@ -75,8 +94,6 @@ Put detailed supporting material in `references/` and reusable deterministic ope
 
 Agent-specific metadata that other agents ignore, such as `agents/openai.yaml` for Codex, is additive and belongs in the canonical skill directory.
 
-[CONTRIBUTING.md](CONTRIBUTING.md) states the same rules for human contributors.
-Keep the two in step when either changes.
 
 ## Helper scripts
 
@@ -114,7 +131,8 @@ Do not reference transient plans, task numbers, or past mistakes.
 
 ## Security
 
-A skill is executable instruction and anything under `scripts/` is code that runs with the user's privileges.
-Under the default symlink installation a `git pull` changes what every installed agent executes.
+What you write here runs on other people's machines.
+A skill is executable instruction, and anything under `scripts/` is code their agent may run with their privileges.
+Under the default symlink installation a `git pull` changes what every installed agent executes, with no further action from them.
 
-Treat skill review with the same care as any other code review.
+Write accordingly, and review changes with the same care as any other code.
