@@ -951,7 +951,13 @@ check "warm call does not rebuild the snapshot" \
 Run: `bash tests/test-lsst-run.sh`
 Expected: the new checks fail; `lsst-run` currently exits after printing the tag without running anything.
 
-- [ ] **Step 3: Append the snapshot and execution logic to `lsst-run`**
+- [ ] **Step 3: Drop the now-unnecessary shellcheck suppression**
+
+`CACHE_DIR` is declared near the top of `lsst-run` but nothing read it until this task, so it carries a `# shellcheck disable=SC2034` directive.
+The code below reads it, so delete that directive line and leave the assignment.
+Step 4 confirms shellcheck is still silent without it.
+
+- [ ] **Step 4: Append the snapshot and execution logic to `lsst-run`**
 
 ```bash
 
@@ -1054,16 +1060,17 @@ fi
 exec "$@"
 ```
 
-- [ ] **Step 4: Run the tests**
+- [ ] **Step 5: Run the tests**
 
 ```bash
 bash tests/test-lsst-run.sh
 shellcheck skills/lsst-eups/scripts/lsst-run
+./scripts/validate-skills
 ```
 
-Expected: `14 checks, 0 failed` with a stack active. shellcheck silent.
+Expected: `14 checks, 0 failed` with a stack active. shellcheck silent even though the `SC2034` directive was removed, because `CACHE_DIR` is now read. Validator reports `1 skill(s) validated`.
 
-- [ ] **Step 5: Verify local clone layering by hand**
+- [ ] **Step 6: Verify local clone layering by hand**
 
 ```bash
 CLONE=$(cd "$LSSTSW/build/afw" && pwd -P)
@@ -1074,7 +1081,7 @@ skills/lsst-eups/scripts/lsst-run -l "$CLONE" -- \
 Expected: the printed path is under the clone, not under `$EUPS_PATH`.
 A `ModuleNotFoundError: No module named 'lsst.afw.version'` also confirms the clone won, and means that clone needs `scons python` run once.
 
-- [ ] **Step 6: Verify snapshot freshness by hand**
+- [ ] **Step 7: Verify snapshot freshness by hand**
 
 ```bash
 ls "${XDG_CACHE_HOME:-$HOME/.cache}"/lsst-run/env-*.sh
@@ -1083,7 +1090,7 @@ skills/lsst-eups/scripts/lsst-run -t "$(skills/lsst-eups/scripts/lsst-run --list
 
 Expected: exactly one snapshot per tag, and no rebuild message on the second call.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add skills/lsst-eups/scripts/lsst-run tests/test-lsst-run.sh
