@@ -49,15 +49,26 @@ List dependencies' `-l` before the package being worked on, so the working packa
 
 | Task | Command |
 |------|---------|
-| Tests | `lsst-run -l . -- pytest tests/test_foo.py` |
-| Build after C++ edits | `lsst-run -l . -- scons -Q -j 8` |
-| Make fresh clone importable | `lsst-run -l . -- scons python` (generates `version.py`) |
-| Entry points / CLI changed in pyproject.toml | `lsst-run -l . -- scons pkginfo` |
+| Tests, one file | `lsst-run -l . -- pytest tests/test_foo.py` |
+| Whole suite, package with C++ tests | `lsst-run -l . -- scons -Q -j 8 tests` |
+| Build after C++ edits | `lsst-run -l . -- scons -Q -j 8` (the default targets are whichever of `lib`, `python`, `shebang`, `tests`, `examples`, `doc` have a directory, so this also runs the tests) |
+| Compile the C++ library only | `lsst-run -l . -- scons -Q -j 8 lib` (compiles `src/**/*.cc` into the shared library; `scons python` builds the pybind11 modules on top of it) |
+| Make fresh clone importable | `lsst-run -l . -- scons version` (generates the gitignored `version.py`) |
+| Make command-line tools runnable | `lsst-run -l . -- scons bin` (generates the gitignored `bin/` wrappers, both those from `[project.scripts]` and any shebang-rewritten from a legacy `bin.src/`) |
+| Register the package's Python entry points | `lsst-run -l . -- scons pkginfo` (generates the gitignored `python/*.dist-info`) |
+| All three at once, for a fresh clone or worktree | `lsst-run -l . -- scons version bin pkginfo` |
+| Entry points or `[project.scripts]` changed in `pyproject.toml` | `lsst-run -l . -- scons pkginfo bin` |
 | With a local dependency clone | `lsst-run -l ~/work/daf_butler -l . -- pytest ...` |
 | Stack CLI tools | `lsst-run -- butler ...`, `lsst-run -- pipetask ...`, `lsst-run -- eups ...` |
 | Ad-hoc python | `lsst-run -- python -c "import lsst.afw ..."` |
 | Specific tag | `lsst-run -t b8411 -l . -- pytest ...`, `lsst-run -t w_2026_05 -- ...` |
 | Show available tags | `lsst-run --list-tags` |
+
+The target is `tests`, plural; `scons test` is not a target and fails.
+
+For a pure-Python package `pytest` and `scons tests` run the same tests, and `pytest` is the faster, more direct choice.
+For a package that also carries C++ tests as `tests/*.cc`, only `scons tests` runs the whole suite: it compiles and runs those binaries as well as the Python tests, so a bare `pytest` silently covers only half the suite.
+`scons` passes `-j N` through to pytest as `-n N`, making `scons -j 8 tests` the equivalent of `pytest -n 8 tests` plus the C++ binaries.
 
 ## Tags
 
@@ -86,7 +97,11 @@ A tag from an earlier tree will be rejected; `--list-tags` shows what this one h
 | Symptom | Fix |
 |---------|-----|
 | `no active LSST environment` | Ask the user to source `envconfig` or `loadLSST.bash` and restart the agent |
-| `ModuleNotFoundError: lsst.<pkg>.version` or local clone won't import | `lsst-run -l . -- scons python` |
+| `ModuleNotFoundError: lsst.<pkg>.version` or local clone won't import | `lsst-run -l . -- scons version` |
+| `FileNotFoundError` for `butler`, `pipetask`, or another of the package's own commands, in a test that runs it as a subprocess | `lsst-run -l . -- scons bin`. The clone's `bin/` is on `PATH` but is gitignored and empty until built, so the command is missing rather than shadowed |
+| A plugin the package registers is missing: a `butler` subcommand not listed, an `importlib.metadata.entry_points()` group coming back empty | `lsst-run -l . -- scons pkginfo`. Entry points are read from the generated `python/*.dist-info/entry_points.txt`, never from `pyproject.toml` directly, so editing the toml alone changes nothing |
+| `scons python` reports `Nothing to be done` and nothing appears | It is not the target that generates `version.py`, `bin/`, or the entry points; use `scons version bin pkginfo` |
 | Import picks up stack version instead of local clone | Missing `-l` for that clone |
+| `dlopen` / `Library not loaded` for a stack `.so` | A `sh -c '...'` wrapper inside `lsst-run` discarded the library environment; pass the command to `lsst-run` directly instead |
 | `lsst_distrib has no tag ...` | Pick one of the tags the error lists, or run `lsst-run --list-tags` |
 | Dependency changes in `ups/*.table` not taking effect | None needed; locals are set up on every call |
