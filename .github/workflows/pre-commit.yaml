@@ -18,6 +18,6 @@ jobs:
           python-version: "3.13"
 
       - name: Run prek
-        uses: j178/prek-action@v3.0.0
+        uses: j178/prek-action@v3.1.0
         with:
           extra_args: --all-files
